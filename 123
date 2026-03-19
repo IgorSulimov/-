@@ -1,0 +1,106 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <dirent.h>
+#include <errno.h>
+#include <unistd.h>
+
+int main(int argc, char *argv[]) {
+    if (argc != 3) {
+        printf("Использование: %s <каталог> <файл>\n", argv[0]);
+        printf("Пример: %s /home/vboxuser f1.txt\n", argv[0]);
+        return 1;
+    }
+    
+    printf("========================================\n");
+    printf("ПОИСК ФАЙЛА\n");
+    printf("========================================\n");
+    printf("Каталог для поиска: '%s'\n", argv[1]);
+    printf("Искомый файл: '%s'\n", argv[2]);
+    printf("----------------------------------------\n");
+    
+    // Проверяем, существует ли каталог
+    if (access(argv[1], F_OK) != 0) {
+        printf("❌ Каталог '%s' не существует!\n", argv[1]);
+        return 1;
+    }
+    
+    // Проверяем права на чтение каталога
+    if (access(argv[1], R_OK) != 0) {
+        printf("❌ Нет прав на чтение каталога '%s'!\n", argv[1]);
+        return 1;
+    }
+    
+    printf("✓ Каталог существует и доступен для чтения\n");
+    
+    // Открываем каталог
+    DIR *dir = opendir(argv[1]);
+    if (dir == NULL) {
+        printf("❌ Ошибка открытия каталога: %s\n", strerror(errno));
+        return 1;
+    }
+    
+    printf("✓ Каталог успешно открыт\n");
+    printf("----------------------------------------\n");
+    printf("Содержимое каталога %s:\n", argv[1]);
+    printf("----------------------------------------\n");
+    
+    struct dirent *entry;
+    int found = 0;
+    int total = 0;
+    
+    while ((entry = readdir(dir)) != NULL) {
+        total++;
+        
+        // Пропускаем . и ..
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            printf("   📁 %s (специальный каталог)\n", entry->d_name);
+            continue;
+        }
+        
+        // Определяем тип файла по d_type (если поддерживается)
+        const char *type;
+        switch (entry->d_type) {
+            case DT_REG:  type = "📄 файл"; break;
+            case DT_DIR:  type = "📁 папка"; break;
+            case DT_LNK:  type = "🔗 ссылка"; break;
+            default:      type = "❓ другое"; break;
+        }
+        
+        printf("%2d. %s '%s'", total, type, entry->d_name);
+        
+        // Сравниваем имена (учет регистра!)
+        if (strcmp(entry->d_name, argv[2]) == 0) {
+            printf(" ⭐ НАЙДЕН!");
+            found = 1;
+        }
+        printf("\n");
+    }
+    
+    closedir(dir);
+    
+    printf("----------------------------------------\n");
+    printf("Всего записей в каталоге: %d\n", total);
+    printf("----------------------------------------\n");
+    
+    if (found) {
+        printf("\n✅ УСПЕХ! Файл '%s' найден в каталоге '%s'\n", 
+               argv[2], argv[1]);
+    } else {
+        printf("\n❌ Файл '%s' НЕ найден в каталоге '%s'\n", 
+               argv[2], argv[1]);
+        
+        printf("\nВозможные причины:\n");
+        printf("1. Файл действительно не существует\n");
+        printf("2. Ошибка в имени - проверьте РЕГИСТР букв\n");
+        printf("   (в Linux 'f1.txt' и 'F1.TXT' - разные файлы)\n");
+        printf("3. Файл находится в подкаталоге\n");
+        printf("4. Файл скрытый (начинается с точки)\n");
+        printf("5. Нет прав на чтение файлов в каталоге\n");
+        
+        printf("\nПроверьте вручную:\n");
+        printf("  ls -la %s | grep -i %s\n", argv[1], argv[2]);
+    }
+    
+    return 0;
+}
