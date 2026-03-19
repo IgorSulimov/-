@@ -1,0 +1,94 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <fcntl.h>
+
+// Очередь директорий
+char dir_queue[1000][1024];
+int queue_size = 0;
+
+// Функция добавления в очередь директорий
+void enqueue_directory(const char *path) {
+    strcpy(dir_queue[queue_size], path);
+    queue_size++;
+}
+
+void print_queue() {
+    printf("\n📂 Пройденные директории:\n");
+    for (int i = 0; i < queue_size; i++) {
+        printf("   %d. %s\n", i+1, dir_queue[i]);
+    }
+}
+
+int find_file(const char *target) {
+    DIR *dir = opendir(".");
+    if (!dir) return 0;
+    
+    struct dirent *entry;
+    struct stat st;
+    
+    // Добавляем текущую директорию в очередь
+    char *cwd = getcwd(NULL, 0);
+    if (cwd) {
+        enqueue_directory(cwd);
+        free(cwd);
+    }
+    
+    while ((entry = readdir(dir))) {
+        if (stat(entry->d_name, &st) == -1) continue;
+        
+        // Проверка на директорию (ваше условие)
+        if ((st.st_mode & S_IFMT) == S_IFDIR && entry->d_name[0] != '.') {
+            int fd = open(".", O_RDONLY);
+            if (chdir(entry->d_name) == 0) {
+                if (find_file(target)) {
+                    closedir(dir);
+                    fchdir(fd);
+                    close(fd);
+                    return 1;
+                }
+                fchdir(fd);
+            }
+            close(fd);
+        }
+        else if (S_ISREG(st.st_mode) && strcmp(entry->d_name, target) == 0) {
+            char *path = getcwd(NULL, 0);
+            if (path) {
+                printf("\n✅ Найден: %s/%s\n", path, target);
+                printf("   Размер: %ld байт\n", st.st_size);
+                print_queue();
+                free(path);
+                closedir(dir);
+                return 1;
+            }
+        }
+    }
+    
+    closedir(dir);
+    queue_size--;
+    return 0;
+}
+
+int main(int argc, char **argv) {
+    if (argc != 3) {
+        printf("Использование: %s <каталог> <файл>\n", argv[0]);
+        return 1;
+    }
+    
+    int original = open(".", O_RDONLY);
+    if (chdir(argv[1]) != 0) {
+        printf("Ошибка перехода в %s\n", argv[1]);
+        return 1;
+    }
+    
+    if (!find_file(argv[2])) {
+        printf("\n❌ Файл '%s' не найден\n", argv[2]);
+    }
+    
+    fchdir(original);
+    close(original);
+    return 0;
+}
