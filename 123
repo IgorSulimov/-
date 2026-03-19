@@ -66,8 +66,7 @@ int main(int argc, char *argv[]) {
             if (bytes > 0) {
                 fwrite(buffer, 1, bytes, dest);
                 total_bytes += bytes;
-                printf("Скопировано %ld байт (всего: %d из %ld)\n", 
-                       bytes, total_bytes, file_stat.st_size);
+                printf("Скопировано %ld байт\n",bytes);
             }
             else if (bytes == 0) 
                 break;
@@ -85,9 +84,9 @@ int main(int argc, char *argv[]) {
     
     // Проверяем результат
     if (total_bytes == file_stat.st_size) 
-        printf("Копирование завершено успешно\n", total_bytes);
+        printf("Копирование завершено успешно\n");
     else 
-        printf("Копирование завершено с ошибкой\n", total_bytes, file_stat.st_size);
+        printf("Копирование завершено с ошибкой\n");
     
     close(source_fd);
     fclose(dest);
