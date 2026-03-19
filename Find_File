@@ -4,7 +4,10 @@
 #include <dirent.h>
 
 int main(int argc, char *argv[]) {
-    if (argc != 3) return 1;
+        if (argc != 3) {
+        printf("Введите: %s <каталог> <файл>\n", argv[0]);
+        return 1;
+    }
     
     DIR *dir = opendir(argv[1]);
     if (!dir) return 1;
@@ -13,12 +16,11 @@ int main(int argc, char *argv[]) {
     while ((entry = readdir(dir))) {
         if (strcmp(entry->d_name, argv[2]) == 0) {
             closedir(dir);
-            printf("yes\n");
+            printf("Файл %s НАЙДЕН\n",entry->d_name);
             return 0;
         }
     }
-    
+    printf("Файла %s Нет в данной дирректории \n",argv[2]);
     closedir(dir);
-    printf("no\n");
     return 0;
 }
