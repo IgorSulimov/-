@@ -17,7 +17,7 @@ int main(int argc, char *argv[]) {
     // Получаем размер исходного файла через stat
     struct stat file_stat;
     if (stat(argv[1], &file_stat) == -1) {
-        perror("Ошибка получения информации о файле");
+        perror("Ошибка получения информации о файле\n");
         return 1;
     }
     
@@ -26,40 +26,38 @@ int main(int argc, char *argv[]) {
     // Открываем исходный файл
     int source_fd = open(argv[1], O_RDONLY);
     if (source_fd < 0) {
-        perror("Ошибка открытия исходного файла");
+        perror("Ошибка открытия исходного файла\n");
         return 1;
     }
     
     // Открываем целевой файл
     FILE *dest = fopen(argv[2], "w");
     if (dest == NULL) {
-        perror("Ошибка создания целевого файла");
+        perror("Ошибка создания целевого файла\n");
         close(source_fd);
         return 1;
     }
     
-    // Настраиваем poll
     struct pollfd fds[1];
     fds[0].fd = source_fd;
     fds[0].events = POLLIN;
     
     char buffer[BUFFER_SIZE];
     int total_bytes = 0;
+    int bytes_to_read = file_stat.st_size;
     
-    printf("Начинаем копирование...\n");
-    
-    // Основной цикл копирования
-    while (1) {
+    // Копируем пока не прочитаем весь файл
+    while (total_bytes < bytes_to_read) {
         int ret = poll(fds, 1, TIMEOUT * 1000);
         
         if (ret < 0) {
-            perror("poll error");
+            perror("Ошибка с poll\n");
             break;
         }
         
         if (ret == 0) {
-            printf("Ожидание данных... (скопировано %d байт)\n", total_bytes);
-            continue;
+            printf("Таймаут: скопировано %d из %ld байт\n", total_bytes, file_stat.st_size);
+            break;
         }
         
         if (fds[0].revents & POLLIN) {
@@ -68,12 +66,13 @@ int main(int argc, char *argv[]) {
             if (bytes > 0) {
                 fwrite(buffer, 1, bytes, dest);
                 total_bytes += bytes;
-            } else if (bytes == 0) {
-                // Конец файла
-                printf("\nКопирование завершено!\n");
+                printf("Скопировано %ld байт (всего: %d из %ld)\n", 
+                       bytes, total_bytes, file_stat.st_size);
+            }
+            else if (bytes == 0) 
                 break;
-            } else {
-                perror("read error");
+            else {
+                perror("read error\n");
                 break;
             }
         }
@@ -84,14 +83,11 @@ int main(int argc, char *argv[]) {
         }
     }
     
-    // Проверяем, что скопировали весь файл
-    if (total_bytes == file_stat.st_size) {
-        printf("Успешно скопировано %d байт (размер исходного файла: %ld байт)\n", 
-               total_bytes, file_stat.st_size);
-    } else {
-        printf("Предупреждение: скопировано %d байт из %ld байт\n", 
-               total_bytes, file_stat.st_size);
-    }
+    // Проверяем результат
+    if (total_bytes == file_stat.st_size) 
+        printf("Копирование завершено успешно\n", total_bytes);
+    else 
+        printf("Копирование завершено с ошибкой\n", total_bytes, file_stat.st_size);
     
     close(source_fd);
     fclose(dest);
