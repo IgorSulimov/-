@@ -10,19 +10,19 @@
 char dir_queue[1000][1024];
 int queue_size = 0;
 
-// Функция добавления в очередь директорий
+//Добавления в очередь директорий
 void enqueue_directory(const char *path) {
     strcpy(dir_queue[queue_size], path);
     queue_size++;
 }
-
+//Вывод Пути из директорий
 void print_queue() {
-    printf("\n📂 Пройденные директории:\n");
+    printf("\nПуть по директориям:\n");
     for (int i = 0; i < queue_size; i++) {
-        printf("   %d. %s\n", i+1, dir_queue[i]);
+        printf("%d. %s\n", i+1, dir_queue[i]);
     }
 }
-
+// Поиск файла
 int find_file(const char *target) {
     DIR *dir = opendir(".");
     if (!dir) return 0;
@@ -30,17 +30,16 @@ int find_file(const char *target) {
     struct dirent *entry;
     struct stat st;
     
-    // Добавляем текущую директорию в очередь
     char *cwd = getcwd(NULL, 0);
     if (cwd) {
         enqueue_directory(cwd);
         free(cwd);
     }
-    
+    //Рекурсия по поиску файла 
     while ((entry = readdir(dir))) {
         if (stat(entry->d_name, &st) == -1) continue;
         
-        // Проверка на директорию (ваше условие)
+        // Проверка на директорию
         if ((st.st_mode & S_IFMT) == S_IFDIR && entry->d_name[0] != '.') {
             int fd = open(".", O_RDONLY);
             if (chdir(entry->d_name) == 0) {
@@ -57,8 +56,8 @@ int find_file(const char *target) {
         else if (S_ISREG(st.st_mode) && strcmp(entry->d_name, target) == 0) {
             char *path = getcwd(NULL, 0);
             if (path) {
-                printf("\n✅ Найден: %s/%s\n", path, target);
-                printf("   Размер: %ld байт\n", st.st_size);
+                printf("НАЙДЕН ФАЙЛ: %s/%s\n", path, target);
+                printf("Размер: %ld байт\n", st.st_size);
                 print_queue();
                 free(path);
                 closedir(dir);
@@ -74,7 +73,7 @@ int find_file(const char *target) {
 
 int main(int argc, char **argv) {
     if (argc != 3) {
-        printf("Использование: %s <каталог> <файл>\n", argv[0]);
+        printf("Введите: %s <каталог> <файл>\n", argv[0]);
         return 1;
     }
     
@@ -85,7 +84,7 @@ int main(int argc, char **argv) {
     }
     
     if (!find_file(argv[2])) {
-        printf("\n❌ Файл '%s' не найден\n", argv[2]);
+        printf("Файл '%s' не найден\n", argv[2]);
     }
     
     fchdir(original);
