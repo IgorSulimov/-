@@ -1,106 +1,73 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-#include <dirent.h>
-#include <errno.h>
 #include <unistd.h>
+#include <poll.h>
+#include <fcntl.h>
+#define TIMEOUT 5
+#define BUFFER_SIZE 1024
 
 int main(int argc, char *argv[]) {
     if (argc != 3) {
-        printf("Использование: %s <каталог> <файл>\n", argv[0]);
-        printf("Пример: %s /home/vboxuser f1.txt\n", argv[0]);
+        printf("Введите: %s <исходный_файл> <целевой_файл>\n", argv[0]);
         return 1;
     }
     
-    printf("========================================\n");
-    printf("ПОИСК ФАЙЛА\n");
-    printf("========================================\n");
-    printf("Каталог для поиска: '%s'\n", argv[1]);
-    printf("Искомый файл: '%s'\n", argv[2]);
-    printf("----------------------------------------\n");
-    
-    // Проверяем, существует ли каталог
-    if (access(argv[1], F_OK) != 0) {
-        printf("❌ Каталог '%s' не существует!\n", argv[1]);
+
+    int source_fd = open(argv[1], O_RDONLY);
+    if (source_fd < 0) {
+        perror("Ошибка открытия исходного файла");
         return 1;
     }
     
-    // Проверяем права на чтение каталога
-    if (access(argv[1], R_OK) != 0) {
-        printf("❌ Нет прав на чтение каталога '%s'!\n", argv[1]);
+
+    FILE *dest = fopen(argv[2], "w");
+    if (dest == NULL) {
+        perror("Ошибка создания целевого файла");
+        close(source_fd);
         return 1;
     }
     
-    printf("✓ Каталог существует и доступен для чтения\n");
+
+    struct pollfd fds[1];
+    fds[0].fd = source_fd;
+    fds[0].events = POLLIN;
     
-    // Открываем каталог
-    DIR *dir = opendir(argv[1]);
-    if (dir == NULL) {
-        printf("❌ Ошибка открытия каталога: %s\n", strerror(errno));
-        return 1;
-    }
+    char buffer[BUFFER_SIZE];
+    int total_bytes = 0;
     
-    printf("✓ Каталог успешно открыт\n");
-    printf("----------------------------------------\n");
-    printf("Содержимое каталога %s:\n", argv[1]);
-    printf("----------------------------------------\n");
-    
-    struct dirent *entry;
-    int found = 0;
-    int total = 0;
-    
-    while ((entry = readdir(dir)) != NULL) {
-        total++;
+    int ret = poll(fds, 1, TIMEOUT * 1000);
         
-        // Пропускаем . и ..
-        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
-            printf("   📁 %s (специальный каталог)\n", entry->d_name);
-            continue;
+    if (ret < 0) {
+        perror("poll error");
+        return 1;
+    }
+        
+    if (ret == 0) {
+        printf("Ожидание данных\n");
+    }
+        
+        if (fds[0].revents & POLLIN) {
+            ssize_t bytes = read(source_fd, buffer, sizeof(buffer));
+            
+            if (bytes > 0) {
+                fwrite(buffer, 1, bytes, dest);
+                total_bytes += bytes;
+                printf("Прочитано %ld байт (всего: %d)\n", bytes, total_bytes);
+                } 
+            else {
+                perror("read error");
+                return 1;
+            }
         }
         
-        // Определяем тип файла по d_type (если поддерживается)
-        const char *type;
-        switch (entry->d_type) {
-            case DT_REG:  type = "📄 файл"; break;
-            case DT_DIR:  type = "📁 папка"; break;
-            case DT_LNK:  type = "🔗 ссылка"; break;
-            default:      type = "❓ другое"; break;
+        if (fds[0].revents & POLLERR) {
+            printf("Ошибка при чтении файла\n");
+            return 1;
         }
-        
-        printf("%2d. %s '%s'", total, type, entry->d_name);
-        
-        // Сравниваем имена (учет регистра!)
-        if (strcmp(entry->d_name, argv[2]) == 0) {
-            printf(" ⭐ НАЙДЕН!");
-            found = 1;
-        }
-        printf("\n");
-    }
     
-    closedir(dir);
+    close(source_fd);
+    fclose(dest);
     
-    printf("----------------------------------------\n");
-    printf("Всего записей в каталоге: %d\n", total);
-    printf("----------------------------------------\n");
-    
-    if (found) {
-        printf("\n✅ УСПЕХ! Файл '%s' найден в каталоге '%s'\n", 
-               argv[2], argv[1]);
-    } else {
-        printf("\n❌ Файл '%s' НЕ найден в каталоге '%s'\n", 
-               argv[2], argv[1]);
-        
-        printf("\nВозможные причины:\n");
-        printf("1. Файл действительно не существует\n");
-        printf("2. Ошибка в имени - проверьте РЕГИСТР букв\n");
-        printf("   (в Linux 'f1.txt' и 'F1.TXT' - разные файлы)\n");
-        printf("3. Файл находится в подкаталоге\n");
-        printf("4. Файл скрытый (начинается с точки)\n");
-        printf("5. Нет прав на чтение файлов в каталоге\n");
-        
-        printf("\nПроверьте вручную:\n");
-        printf("  ls -la %s | grep -i %s\n", argv[1], argv[2]);
-    }
-    
+    printf("Копирование завершено\n");
     return 0;
 }
