@@ -1,0 +1,58 @@
+#include <stdio.h>    // puts(), printf(), perror(), getchar()
+#include <stdlib.h>   // exit(), EXIT_SUCCESS, EXIT_FAILURE
+#include <unistd.h>   // getpid(), getppid(), fork()
+#include <sys/wait.h> // wait()
+
+#define READ  0
+#define WRITE 1
+
+void child_a(int fd[]) {
+    dup2(fd[WRITE], STDOUT_FILENO);
+
+    close(fd[READ]);
+    close(fd[WRITE]);
+
+    execlp("ls", "ls", "-F", "-1", NULL);
+
+    perror("execlp ls failed");
+    exit(EXIT_FAILURE);
+}
+
+void child_b(int fd[]) {
+
+    dup2(fd[READ], STDIN_FILENO);
+
+    close(fd[READ]);
+    close(fd[WRITE]);
+
+    execlp("nl", "nl", NULL);
+
+    perror("execlp nl failed");
+    exit(EXIT_FAILURE);
+}
+
+int main(void) {
+    int fd[2];
+
+    pipe(fd)
+
+    pid_t pid_a = fork();
+
+    if (pid_a == 0) {
+        child_a(fd);
+    }
+
+    pid_t pid_b = fork();
+
+    if (pid_b == 0) {
+        child_b(fd);
+    }
+
+    close(fd[READ]);
+    close(fd[WRITE]);
+
+    wait(NULL);
+    wait(NULL);
+
+    return EXIT_SUCCESS;
+}
