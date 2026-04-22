@@ -1,0 +1,121 @@
+#include "parser.h"    // cmd_t, position_t, parse_commands()
+
+#include <sys/types.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <string.h>
+#include <errno.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include <fcntl.h>     //fcntl(), F_GETFL
+
+#define READ  0
+#define WRITE 1
+
+/**
+ * Для простоты мы используем глобальный массив для хранения данных каждой команды в
+ * конвейере команд.
+ */
+cmd_t commands[MAX_COMMANDS];
+
+/**
+ *  Отладочная распечатка массива команд.
+ */
+void print_commands(int n) {
+  for (int i = 0; i < n; i++) {
+    printf("==> commands[%d]\n", i);
+    printf("  pos = %s\n", position_to_string(commands[i].pos));
+    printf("  in  = %d\n", commands[i].in);
+    printf("  out = %d\n", commands[i].out);
+
+    print_argv(commands[i].argv);
+  }
+
+}
+
+/**
+ * Возвращает true, если файловый дескриптор fd открыт. В противном случае возвращается false.
+ */
+int is_open(int fd) {
+  return fcntl(fd, F_GETFL) != -1 || errno != EBADF;
+}
+
+void fork_error() {
+  perror("fork() failed)");
+  exit(EXIT_FAILURE);
+}
+
+/**
+ *  fork процесса для команды с индексом i в конвейере команд. Если необходимо,
+ * создайте новый канал и обновите дескрипторы in и out для команды.
+ */
+void fork_cmd(int i) {
+  pid_t pid;
+
+  switch (pid = fork()) {
+    case -1:
+      fork_error();
+    case 0:
+      // Дочерний процесс после успешного завершения fork().
+
+      // Выполнение команды в контексте дочернего процесса.
+      execvp(commands[i].argv[0], commands[i].argv);
+
+      // Если execvp() завершится успешно, этот код никогда не должен быть достигнут.
+      fprintf(stderr, "shell: command not found: %s\n", commands[i].argv[0]);
+      exit(EXIT_FAILURE);
+
+    default:
+      // Родительский процесс после успешного завершения fork().
+
+      break;
+  }
+}
+
+/**
+ *  fork одного дочернего процесса для каждой команды в конвейере команд.
+ */
+void fork_commands(int n) {
+
+  for (int i = 0; i < n; i++) {
+    fork_cmd(i);
+  }
+}
+
+/**
+ * Считывает командную строку от пользователя и сохраняет строку в 
+ * буфере.
+ */
+void get_line(char* buffer, size_t size) {
+  size_t a = getline(&buffer, &size, stdin);
+  buffer[strlen(buffer)-1] = '\0';
+}
+
+/**
+ * Заставьте родителей ждать все дочерние процессы.
+ */
+void wait_for_all_cmds(int n) {
+  // Пока не реализовано!
+}
+
+int main() {
+  int n;               // Количество команд в конвейере команд.
+  size_t size = 128;   // Максимальный размер командной строки.
+  char line[size];     // Буфер для командной строки.
+
+
+  while(true) {
+    printf(" >>> ");
+
+    get_line(line, size);
+
+    n = parse_commands(line, commands);
+	printf("shell: command found: %s\n", commands[0].argv[0]);
+	print_commands(n);
+    fork_commands(n);
+
+    wait_for_all_cmds(n);
+  }
+
+  exit(EXIT_SUCCESS);
+}
