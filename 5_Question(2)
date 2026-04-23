@@ -71,14 +71,9 @@ void setup_redirection(int i, int prev_pipe[2], int next_pipe[2], int n) {
     
     // НАСТРОЙКА ВВОДА (откуда читать)
     if (commands[i].in != -1) {
-        // Чтение из файла: command < file.txt
-        int fd_in = open(commands[i].in_file, O_RDONLY);
-        if (fd_in == -1) {
-            perror("open input file failed");
-            exit(EXIT_FAILURE);
-        }
-        dup2(fd_in, STDIN_FILENO);
-        close(fd_in);
+        // Parser уже открыл файл и положил дескриптор в commands[i].in
+        dup2(commands[i].in, STDIN_FILENO);
+        close(commands[i].in);
     } 
     else if (i > 0 && prev_pipe != NULL) {
         // Чтение из предыдущего канала (для команд B, C, ...)
@@ -87,21 +82,9 @@ void setup_redirection(int i, int prev_pipe[2], int next_pipe[2], int n) {
     
     // НАСТРОЙКА ВЫВОДА (куда писать)
     if (commands[i].out != -1) {
-        // Запись в файл: command > file.txt
-        int flags = O_WRONLY | O_CREAT;
-        if (commands[i].append) {
-            flags |= O_APPEND;  // >>
-        } else {
-            flags |= O_TRUNC;   // >
-        }
-        
-        int fd_out = open(commands[i].out_file, flags, 0644);
-        if (fd_out == -1) {
-            perror("open output file failed");
-            exit(EXIT_FAILURE);
-        }
-        dup2(fd_out, STDOUT_FILENO);
-        close(fd_out);
+        // Parser уже открыл файл и положил дескриптор в commands[i].out
+        dup2(commands[i].out, STDOUT_FILENO);
+        close(commands[i].out);
     } 
     else if (i < n - 1 && next_pipe != NULL) {
         // Запись в следующий канал (для команд A, B, ...)
@@ -221,24 +204,6 @@ void wait_for_all_cmds(int n) {
     }
 }
 
-// Обрабатывает встроенные команды (cd, exit)
-bool handle_builtin_commands(cmd_t *cmd) {
-    if (strcmp(cmd->argv[0], "exit") == 0) {
-        exit(EXIT_SUCCESS);
-    } 
-    else if (strcmp(cmd->argv[0], "cd") == 0) {
-        if (cmd->argv[1] == NULL) {
-            chdir(getenv("HOME"));
-        } else {
-            if (chdir(cmd->argv[1]) != 0) {
-                perror("cd failed");
-            }
-        }
-        return true;
-    }
-    return false;
-}
-
 // Обрабатывает специальную команду !!
 bool handle_special_commands(char **line_ptr) {
     char *line = *line_ptr;
@@ -264,7 +229,7 @@ bool handle_special_commands(char **line_ptr) {
     return false;
 }
 
-// Отладочная печать (можно удалить)
+// Отладочная печать
 void print_commands(int n) {
     for (int i = 0; i < n; i++) {
         printf("==> commands[%d]\n", i);
@@ -307,12 +272,7 @@ int main() {
         
         if (n == 0) continue;
         
-        // Встроенные команды (выполняются без создания дочерних процессов)
-        if (n == 1 && handle_builtin_commands(&commands[0])) {
-            continue;
-        }
-        
-        // Отладочный вывод (можно убрать)
+        // Отладочный вывод
         printf("shell: %d command(s) found in pipeline\n", n);
         print_commands(n);
         
