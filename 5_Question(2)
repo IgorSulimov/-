@@ -15,7 +15,6 @@
 #define MAX_COMMANDS 16
 
 cmd_t commands[MAX_COMMANDS];
-char *last_command_line = NULL;
 
 void print_commands(int n) {
   for (int i = 0; i < n; i++) {
@@ -68,9 +67,11 @@ char* get_from_history() {
  */
 void fork_commands(int n) {
   int pipes[MAX_COMMANDS][2];
+  pid_t pids[MAX_COMMANDS];
+  int num_pipes = n - 1;
   
   // Создаём все pipe (n-1 штук)
-  for (int i = 0; i < n - 1; i++) {
+  for (int i = 0; i < num_pipes; i++) {
     if (pipe(pipes[i]) == -1) {
       perror("pipe failed");
       exit(EXIT_FAILURE);
@@ -79,13 +80,13 @@ void fork_commands(int n) {
   
   // Создаём дочерние процессы
   for (int i = 0; i < n; i++) {
-    pid_t pid = fork();
+    pids[i] = fork();
     
-    if (pid == -1) {
+    if (pids[i] == -1) {
       fork_error();
     }
     
-    if (pid == 0) {
+    if (pids[i] == 0) {
       // === ДОЧЕРНИЙ ПРОЦЕСС ===
       
       // Перенаправление ввода (не для первой команды)
@@ -99,19 +100,24 @@ void fork_commands(int n) {
       }
       
       // Закрываем все pipe в дочернем процессе
-      for (int j = 0; j < n - 1; j++) {
+      for (int j = 0; j < num_pipes; j++) {
         close(pipes[j][READ]);
         close(pipes[j][WRITE]);
       }
       
       // Перенаправление из файлов (если указаны)
+      // НЕ закрываем дескрипторы 0,1,2 (stdin, stdout, stderr)
       if (commands[i].in != -1) {
         dup2(commands[i].in, STDIN_FILENO);
-        close(commands[i].in);
+        if (commands[i].in > 2) {
+          close(commands[i].in);
+        }
       }
       if (commands[i].out != -1) {
         dup2(commands[i].out, STDOUT_FILENO);
-        close(commands[i].out);
+        if (commands[i].out > 2) {
+          close(commands[i].out);
+        }
       }
       
       // Запускаем команду
@@ -126,14 +132,27 @@ void fork_commands(int n) {
   // === РОДИТЕЛЬСКИЙ ПРОЦЕСС ===
   
   // Закрываем все pipe в родителе
-  for (int i = 0; i < n - 1; i++) {
+  for (int i = 0; i < num_pipes; i++) {
     close(pipes[i][READ]);
     close(pipes[i][WRITE]);
   }
+}
+
+/**
+ * Ожидание завершения всех дочерних процессов
+ */
+void wait_for_all_cmds(int n) {
+  int status;
+  pid_t pid;
   
   // Ждём завершения всех дочерних процессов
-  for (int i = 0; i < n; i++) {
-    wait(NULL);
+  while ((pid = wait(&status)) > 0) {
+    // Можно вывести информацию о завершении процесса (опционально)
+    if (WIFEXITED(status)) {
+      // Процесс завершился нормально
+    } else if (WIFSIGNALED(status)) {
+      fprintf(stderr, "Process %d terminated by signal %d\n", pid, WTERMSIG(status));
+    }
   }
 }
 
@@ -146,10 +165,6 @@ void get_line(char* buffer, size_t size) {
   if (len > 0 && buffer[len-1] == '\n') {
     buffer[len-1] = '\0';
   }
-}
-
-void wait_for_all_cmds(int n) {
-  // Уже реализовано в fork_commands
 }
 
 int main() {
@@ -180,9 +195,14 @@ int main() {
     save_to_history(line);
 
     n = parse_commands(line, commands);
+    
+    if (n == 0) continue;
+    
     printf("shell: command found: %s\n", commands[0].argv[0]);
     print_commands(n);
+    
     fork_commands(n);
+    wait_for_all_cmds(n);  // ТЕПЕРЬ РАБОТАЕТ!
   }
 
   exit(EXIT_SUCCESS);
