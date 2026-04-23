@@ -1,288 +1,209 @@
-#include "parser.h"    // cmd_t, position_t, parse_commands()
-
+#include "parser.h"
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <string.h>
-#include <errno.h>
 #include <stdlib.h>
-#include <stdbool.h>
 #include <fcntl.h>
 
-#define READ  0
+#define READ 0
 #define WRITE 1
 #define HISTORY_FILE ".shell_history"
 
 cmd_t commands[MAX_COMMANDS];
 
-// ==================== ФУНКЦИИ ДЛЯ ИСТОРИИ (!!) ====================
-
-// Сохраняет команду в файл (перезаписывает)
-void save_command_to_file(const char *command) {
-    FILE *file = fopen(HISTORY_FILE, "w");
-    if (file == NULL) {
-        return;
+// Сохраняет команду в файл
+void save_to_history(const char *cmd) {
+    FILE *f = fopen(HISTORY_FILE, "w");
+    if (f) {
+        fprintf(f, "%s\n", cmd);
+        fclose(f);
     }
-    fprintf(file, "%s\n", command);
-    fclose(file);
 }
 
 // Читает последнюю команду из файла
-char* read_last_command_from_file() {
-    FILE *file = fopen(HISTORY_FILE, "r");
-    if (file == NULL) {
-        return NULL;
-    }
+char* get_from_history() {
+    FILE *f = fopen(HISTORY_FILE, "r");
+    if (!f) return NULL;
     
     char *line = NULL;
     size_t len = 0;
-    ssize_t read;
-    
-    read = getline(&line, &len, file);
-    fclose(file);
-    
-    if (read == -1) {
+    if (getline(&line, &len, f) == -1) {
         free(line);
-        return NULL;
+        line = NULL;
     }
+    fclose(f);
     
-    // Удаляем символ новой строки
-    size_t line_len = strlen(line);
-    if (line_len > 0 && line[line_len-1] == '\n') {
-        line[line_len-1] = '\0';
+    if (line) {
+        size_t l = strlen(line);
+        if (l > 0 && line[l-1] == '\n') line[l-1] = '\0';
     }
-    
     return line;
 }
 
-// ==================== ФУНКЦИИ ДЛЯ PIPE (КОНВЕЙЕР) ====================
-
-// Создаёт канал (pipe)
-void create_pipe(int pipefd[2]) {
-    if (pipe(pipefd) == -1) {
-        perror("pipe() failed");
-        exit(EXIT_FAILURE);
-    }
-}
-
-// Настраивает перенаправление ввода/вывода для команды
-void setup_redirection(int i, int prev_pipe[2], int next_pipe[2], int n) {
-    
-    // НАСТРОЙКА ВВОДА (откуда читать)
-    if (commands[i].in != -1) {
-        // Parser уже открыл файл и положил дескриптор в commands[i].in
-        dup2(commands[i].in, STDIN_FILENO);
-        close(commands[i].in);
-    } 
-    else if (i > 0 && prev_pipe != NULL) {
-        // Чтение из предыдущего канала (для команд B, C, ...)
-        dup2(prev_pipe[READ], STDIN_FILENO);
-    }
-    
-    // НАСТРОЙКА ВЫВОДА (куда писать)
-    if (commands[i].out != -1) {
-        // Parser уже открыл файл и положил дескриптор в commands[i].out
-        dup2(commands[i].out, STDOUT_FILENO);
-        close(commands[i].out);
-    } 
-    else if (i < n - 1 && next_pipe != NULL) {
-        // Запись в следующий канал (для команд A, B, ...)
-        dup2(next_pipe[WRITE], STDOUT_FILENO);
-    }
-}
-
-// Закрывает ненужные концы каналов
-void close_pipe_fds(int prev_pipe[2], int next_pipe[2]) {
-    if (prev_pipe != NULL) {
-        close(prev_pipe[READ]);
-        close(prev_pipe[WRITE]);
-    }
-    if (next_pipe != NULL) {
-        close(next_pipe[READ]);
-        close(next_pipe[WRITE]);
-    }
-}
-
 // Создаёт дочерний процесс для одной команды
-void fork_cmd(int i, int prev_pipe[2], int next_pipe[2], int n) {
+void run_command(int i, int prev_pipe[2], int next_pipe[2], int n) {
     pid_t pid = fork();
     
     if (pid == -1) {
-        perror("fork() failed");
-        exit(EXIT_FAILURE);
+        perror("fork");
+        exit(1);
     }
     
     if (pid == 0) {
-        // ДОЧЕРНИЙ ПРОЦЕСС
+        // Дочерний процесс
         
-        // Настраиваем откуда читать и куда писать
-        setup_redirection(i, prev_pipe, next_pipe, n);
+        // Настройка ввода
+        if (commands[i].in != -1) {
+            dup2(commands[i].in, STDIN_FILENO);
+        } else if (i > 0 && prev_pipe != NULL) {
+            dup2(prev_pipe[READ], STDIN_FILENO);
+        }
         
-        // Закрываем ненужные концы каналов
-        close_pipe_fds(prev_pipe, next_pipe);
+        // Настройка вывода
+        if (commands[i].out != -1) {
+            dup2(commands[i].out, STDOUT_FILENO);
+        } else if (i < n - 1 && next_pipe != NULL) {
+            dup2(next_pipe[WRITE], STDOUT_FILENO);
+        }
         
-        // Выполняем команду
+        // Закрываем все pipe
+        if (prev_pipe != NULL) {
+            close(prev_pipe[READ]);
+            close(prev_pipe[WRITE]);
+        }
+        if (next_pipe != NULL) {
+            close(next_pipe[READ]);
+            close(next_pipe[WRITE]);
+        }
+        
+        // Запускаем команду
         execvp(commands[i].argv[0], commands[i].argv);
         
-        // Если дошли сюда - команда не найдена
+        // Если сюда дошли - ошибка
         fprintf(stderr, "shell: command not found: %s\n", commands[i].argv[0]);
-        exit(EXIT_FAILURE);
-    }
-    
-    // РОДИТЕЛЬСКИЙ ПРОЦЕСС
-    
-    // Закрываем каналы в родителе (они больше не нужны)
-    if (prev_pipe != NULL) {
-        close(prev_pipe[READ]);
-        close(prev_pipe[WRITE]);
+        exit(1);
     }
 }
 
-// Создаёт конвейер из n команд
-void fork_commands(int n) {
+// Запускает конвейер команд
+void run_pipeline(int n) {
     int prev_pipe[2];
     int next_pipe[2];
-    bool has_prev_pipe = false;
+    int has_prev = 0;
     
     for (int i = 0; i < n; i++) {
-        // Создаём новый канал для связи со следующей командой (если не последняя)
+        // Создаём pipe для следующей команды (если не последняя)
         if (i < n - 1 && commands[i].out == -1) {
-            create_pipe(next_pipe);
+            if (pipe(next_pipe) == -1) {
+                perror("pipe");
+                exit(1);
+            }
         }
         
-        // Запускаем команду с нужными каналами
-        fork_cmd(i, 
-                 has_prev_pipe ? prev_pipe : NULL,  // откуда читать
-                 (i < n - 1 && commands[i].out == -1) ? next_pipe : NULL,  // куда писать
-                 n);
+        // Запускаем команду
+        run_command(i, has_prev ? prev_pipe : NULL, 
+                    (i < n - 1 && commands[i].out == -1) ? next_pipe : NULL, n);
         
-        // Закрываем предыдущий канал
-        if (has_prev_pipe) {
+        // Закрываем предыдущий pipe
+        if (has_prev) {
             close(prev_pipe[READ]);
             close(prev_pipe[WRITE]);
         }
         
-        // Сохраняем текущий канал как предыдущий для следующей команды
+        // Сохраняем текущий pipe как предыдущий
         if (i < n - 1 && commands[i].out == -1) {
             prev_pipe[READ] = next_pipe[READ];
             prev_pipe[WRITE] = next_pipe[WRITE];
-            has_prev_pipe = true;
+            has_prev = 1;
         } else {
-            has_prev_pipe = false;
+            has_prev = 0;
         }
     }
     
-    // Закрываем последний канал, если он есть
-    if (has_prev_pipe) {
+    // Закрываем последний pipe
+    if (has_prev) {
         close(prev_pipe[READ]);
         close(prev_pipe[WRITE]);
     }
+    
+    // Ждём завершения всех дочерних процессов
+    while (wait(NULL) > 0);
 }
-
-// ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 
 // Читает строку от пользователя
-void get_line(char* buffer, size_t size) {
-    if (fgets(buffer, size, stdin) == NULL) {
+void read_line(char *buf, size_t size) {
+    if (fgets(buf, size, stdin) == NULL) {
         printf("\n");
-        exit(EXIT_SUCCESS);
+        exit(0);
     }
-    size_t len = strlen(buffer);
-    if (len > 0 && buffer[len-1] == '\n') {
-        buffer[len-1] = '\0';
-    }
-}
-
-// Ожидает завершения всех дочерних процессов
-void wait_for_all_cmds(int n) {
-    int status;
-    pid_t pid;
-    
-    while ((pid = wait(&status)) > 0) {
-        // Просто ждём все процессы
+    size_t len = strlen(buf);
+    if (len > 0 && buf[len-1] == '\n') {
+        buf[len-1] = '\0';
     }
 }
 
-// Обрабатывает специальную команду !!
-bool handle_special_commands(char **line_ptr) {
-    char *line = *line_ptr;
-    
-    if (strcmp(line, "!!") == 0) {
-        char *last_command = read_last_command_from_file();
-        
-        if (last_command == NULL) {
-            printf("Нет команд в истории\n");
-            return true;
-        }
-        
-        // Выводим команду на экран
-        printf("%s\n", last_command);
-        
-        // Заменяем !! на реальную команду
-        free(*line_ptr);
-        *line_ptr = last_command;
-        
-        return false;  // Продолжаем выполнение
-    }
-    
-    return false;
-}
-
-// Отладочная печать
-void print_commands(int n) {
+// Печатает команды (для отладки)
+void print_cmds(int n) {
     for (int i = 0; i < n; i++) {
-        printf("==> commands[%d]\n", i);
-        printf("  pos = %s\n", position_to_string(commands[i].pos));
-        printf("  in  = %d\n", commands[i].in);
-        printf("  out = %d\n", commands[i].out);
-        print_argv(commands[i].argv);
+        printf("cmd %d: pos=%s, in=%d, out=%d, argv=", 
+               i, position_to_string(commands[i].pos), 
+               commands[i].in, commands[i].out);
+        for (int j = 0; commands[i].argv[j]; j++) {
+            printf("%s ", commands[i].argv[j]);
+        }
+        printf("\n");
     }
 }
-
-// ==================== ГЛАВНАЯ ФУНКЦИЯ ====================
 
 int main() {
-    size_t size = 1024;
-    char *line = malloc(size);
+    char *line = malloc(1024);
     
-    if (line == NULL) {
-        fprintf(stderr, "Memory allocation failed\n");
-        exit(EXIT_FAILURE);
-    }
+    printf("Shell started. Type 'exit' to quit.\n");
     
-    while(true) {
-        printf(" >>> ");
+    while (1) {
+        printf(">>> ");
         fflush(stdout);
         
-        get_line(line, size);
+        read_line(line, 1024);
         
         if (strlen(line) == 0) continue;
         
-        // Обрабатываем !!
-        if (handle_special_commands(&line)) {
-            continue;
+        // Обработка !!
+        if (strcmp(line, "!!") == 0) {
+            char *last = get_from_history();
+            if (last == NULL) {
+                printf("Нет команд в истории\n");
+                continue;
+            }
+            printf("%s\n", last);
+            free(line);
+            line = last;
         }
         
-        // Сохраняем команду в файл истории
-        save_command_to_file(line);
+        // Сохраняем в историю
+        save_to_history(line);
         
-        // Разбираем команду на части
+        // Разбираем команду
         int n = parse_commands(line, commands);
         
         if (n == 0) continue;
         
-        // Отладочный вывод
-        printf("shell: %d command(s) found in pipeline\n", n);
-        print_commands(n);
+        // Выход
+        if (n == 1 && strcmp(commands[0].argv[0], "exit") == 0) {
+            printf("Goodbye!\n");
+            break;
+        }
         
-        // Запускаем конвейер
-        fork_commands(n);
+        // Отладка
+        printf("Found %d command(s)\n", n);
+        print_cmds(n);
         
-        // Ждём завершения всех команд
-        wait_for_all_cmds(n);
+        // Запускаем
+        run_pipeline(n);
     }
     
     free(line);
-    exit(EXIT_SUCCESS);
+    return 0;
 }
