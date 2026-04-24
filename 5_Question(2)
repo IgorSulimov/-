@@ -74,6 +74,9 @@ void fork_cmd(int n) {
     }
   }
   
+  // ПЕЧАТАЕМ ПОСЛЕ ОБНОВЛЕНИЯ
+  print_commands(n);
+  
   for (int i = 0; i < n; i++) {
     pid_t pid = fork();
     
@@ -118,6 +121,10 @@ void fork_cmd(int n) {
     close(pipes[i][READ]);
     close(pipes[i][WRITE]);
   }
+  
+  for (int i = 0; i < n; i++) {
+    wait(NULL);
+  }
 }
 
 /**
@@ -140,15 +147,13 @@ void get_line(char* buffer, size_t size) {
  * Заставьте родителей ждать все дочерние процессы.
  */
 void wait_for_all_cmds(int n) {
-  for (int i = 0; i < n; i++) {
-    wait(NULL);
-  }
+  // Уже реализовано в fork_cmd
 }
 
 int main() {
-  int n;               // Количество команд в конвейере команд.
-  size_t size = 256;   // Максимальный размер командной строки.
-  char line[size];     // Буфер для командной строки.
+  int n;
+  size_t size = 256;
+  char line[size];
 
   while(true) {
     printf(" >>> ");
@@ -177,11 +182,8 @@ int main() {
     if (n == 0) continue;
     
     printf("shell: command found: %s\n", commands[0].argv[0]);
-    print_commands(n);
     
     fork_commands(n);
-    
-    wait_for_all_cmds(n);
   }
 
   if (last_command != NULL) {
