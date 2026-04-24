@@ -1,0 +1,37 @@
+#include <unistd.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <sys/mman.h>
+#define MAX_FORK 2
+// shared memory для атомарного счётчика
+int *process_count;
+pid_t Fork(void){
+	pid_t pid;
+	if ((pid = fork()) < 0)
+		perror("fork");
+	return pid;
+}
+int main() {
+    // создаём разделяемую память для process_count
+    process_count = mmap(NULL, sizeof *process_count,
+                         PROT_READ | PROT_WRITE,
+                         MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    *process_count = 1; // родительский процесс
+    printf("Parent PID: %d starts mini fork-bomb, Total processes: %d\n",
+           getpid(), *process_count);
+
+	for (int i = 0; i < MAX_FORK; i++) {
+        pid_t pid = Fork();
+        if (pid == 0) { // дочерний
+            int count = __sync_fetch_and_add(process_count, 1) + 1; // атомарно увеличиваем
+            printf(" %d --> %d, Total: %d\n", getppid(), getpid(), count);
+            fflush(stdout);
+        } 
+    }
+	sleep(20);
+    for (int i = 0; i < MAX_FORK; i++)  // родитель ждёт завершения всех детей
+        wait(NULL);
+    return 0;
+}
