@@ -49,20 +49,18 @@ void fork_error() {
   exit(EXIT_FAILURE);
 }
 
-// Сохранение команды в буфер
-void save_to_buffer(const char *cmd) {
-  if (last_command != NULL) {
-    free(last_command);
+/**
+ * Считывает командную строку от пользователя
+ */
+void get_line(char* buffer, size_t size) {
+  if (fgets(buffer, size, stdin) == NULL) {
+    printf("\n");
+    exit(EXIT_SUCCESS);
   }
-  last_command = strdup(cmd);
-}
-
-// Получение последней команды из буфера
-char* get_from_buffer() {
-  if (last_command == NULL) {
-    return NULL;
+  size_t len = strlen(buffer);
+  if (len > 0 && buffer[len-1] == '\n') {
+    buffer[len-1] = '\0';
   }
-  return strdup(last_command);
 }
 
 /**
@@ -143,20 +141,6 @@ void run_pipeline(int n) {
   }
 }
 
-/**
- * Считывает командную строку от пользователя
- */
-void get_line(char* buffer, size_t size) {
-  if (fgets(buffer, size, stdin) == NULL) {
-    printf("\n");
-    exit(EXIT_SUCCESS);
-  }
-  size_t len = strlen(buffer);
-  if (len > 0 && buffer[len-1] == '\n') {
-    buffer[len-1] = '\0';
-  }
-}
-
 int main() {
   int n;
   size_t size = 256;
@@ -170,20 +154,21 @@ int main() {
     
     if (strlen(line) == 0) continue;
     
-    // Обработка !!
+    // Обработка !! (используем сохранённую в last_command команду)
     if (strcmp(line, "!!") == 0) {
-      char *last = get_from_buffer();
-      if (last == NULL) {
+      if (last_command == NULL) {
         printf("Нет команд в истории\n");
         continue;
       }
-      printf("%s\n", last);
-      strcpy(line, last);
-      free(last);
+      printf("%s\n", last_command);
+      strcpy(line, last_command);
     }
     
-    // Сохраняем команду в буфер
-    save_to_buffer(line);
+    // Сохраняем команду в буфер (для !!)
+    if (last_command != NULL) {
+      free(last_command);
+    }
+    last_command = strdup(line);
 
     n = parse_commands(line, commands);
     
@@ -192,7 +177,6 @@ int main() {
     printf("shell: command found: %s\n", commands[0].argv[0]);
     print_commands(n);
     
-    // Запускаем конвейер (одна функция вместо fork_commands + fork_cmd)
     run_pipeline(n);
   }
 
