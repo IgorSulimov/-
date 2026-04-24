@@ -65,11 +65,23 @@ void fork_cmd(int n) {
   pid_t pids[MAX_COMMANDS];
   int num_pipes = n - 1;
   
-  // ШАГ 1: Создаём все pipe (n-1 штук)
+  // ШАГ 1: Создаём все pipe
   for (int i = 0; i < num_pipes; i++) {
     if (pipe(pipes[i]) == -1) {
       perror("pipe failed");
       exit(EXIT_FAILURE);
+    }
+  }
+  
+  // ШАГ 1.5: ОБНОВЛЯЕМ in И out ДЛЯ КАЖДОЙ КОМАНДЫ
+  for (int i = 0; i < n; i++) {
+    // Если не первая команда → читаем из предыдущего pipe
+    if (i > 0) {
+      commands[i].in = pipes[i-1][READ];
+    }
+    // Если не последняя команда → пишем в следующий pipe
+    if (i < n - 1) {
+      commands[i].out = pipes[i][WRITE];
     }
   }
   
@@ -79,53 +91,37 @@ void fork_cmd(int n) {
     
     switch(pid) {
       case -1:
-        // Ошибка fork
         fork_error();
         break;
         
-      case 0:
+      case 0: {
         // === ДОЧЕРНИЙ ПРОЦЕСС ===
         
-        // Перенаправление ввода (не для первой команды)
-        if (i > 0) {
-          dup2(pipes[i-1][READ], STDIN_FILENO);
+        // Используем обновлённые in/out
+        if (commands[i].in != -1 && commands[i].in != STDIN_FILENO) {
+          dup2(commands[i].in, STDIN_FILENO);
+          close(commands[i].in);
+        }
+        if (commands[i].out != -1 && commands[i].out != STDOUT_FILENO) {
+          dup2(commands[i].out, STDOUT_FILENO);
+          close(commands[i].out);
         }
         
-        // Перенаправление вывода (не для последней команды)
-        if (i < n - 1) {
-          dup2(pipes[i][WRITE], STDOUT_FILENO);
-        }
-        
-        // Закрываем все pipe в дочернем процессе
+        // Закрываем все pipe
         for (int j = 0; j < num_pipes; j++) {
           close(pipes[j][READ]);
           close(pipes[j][WRITE]);
         }
         
-        // Перенаправление из файлов (если указаны)
-        if (commands[i].in != -1) {
-          dup2(commands[i].in, STDIN_FILENO);
-          if (commands[i].in > 2) {
-            close(commands[i].in);
-          }
-        }
-        if (commands[i].out != -1) {
-          dup2(commands[i].out, STDOUT_FILENO);
-          if (commands[i].out > 2) {
-            close(commands[i].out);
-          }
-        }
-        
         // Запускаем команду
         execvp(commands[i].argv[0], commands[i].argv);
         
-        // Если сюда дошли - команда не найдена
         fprintf(stderr, "shell: command not found: %s\n", commands[i].argv[0]);
         exit(EXIT_FAILURE);
         break;
+      }
         
       default:
-        // === РОДИТЕЛЬСКИЙ ПРОЦЕСС ===
         pids[i] = pid;
         break;
     }
