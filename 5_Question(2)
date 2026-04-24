@@ -32,6 +32,7 @@ void print_commands(int n) {
     printf("  pos = %s\n", position_to_string(commands[i].pos));
     printf("  in  = %d\n", commands[i].in);
     printf("  out = %d\n", commands[i].out);
+
     print_argv(commands[i].argv);
   }
 }
@@ -57,92 +58,89 @@ void get_line(char* buffer, size_t size) {
 }
 
 /**
- *  fork процесса для команды с индексом i в конвейере команд. Если необходимо,
- *  создайте новый канал и обновите дескрипторы in и out для команды.
+ * ФУНКЦИЯ: запуск конвейера команд с использованием switch-case
  */
-void fork_cmd(int i, int n) {
-  static int pipes[MAX_COMMANDS][2];  // Статические pipe для всех команд
-  static int num_pipes = -1;          // Количество созданных pipe
-  static int pipes_created = 0;       // Флаг, что pipe уже созданы
-  pid_t pid;
+void fork_cmd(int n) {
+  int pipes[MAX_COMMANDS][2];
+  pid_t pids[MAX_COMMANDS];
+  int num_pipes = n - 1;
   
-  // При первом вызове (i == 0) создаём все необходимые pipe
-  if (i == 0 && !pipes_created) {
-    num_pipes = n - 1;
-    for (int j = 0; j < num_pipes; j++) {
-      if (pipe(pipes[j]) == -1) {
-        perror("pipe failed");
-        exit(EXIT_FAILURE);
-      }
-    }
-    pipes_created = 1;
-  }
-  
-  switch (pid = fork()) {
-    case -1:
-      fork_error();
-      
-    case 0: {
-      // === ДОЧЕРНИЙ ПРОЦЕСС ===
-      
-      // Обновляем дескрипторы in и out для команды i
-      // Если команда не первая и нет перенаправления из файла
-      if (i > 0 && commands[i].in == -1) {
-        commands[i].in = pipes[i-1][READ];  // Читаем из предыдущего pipe
-      }
-      
-      // Если команда не последняя и нет перенаправления в файл
-      if (i < n - 1 && commands[i].out == -1) {
-        commands[i].out = pipes[i][WRITE];  // Пишем в следующий pipe
-      }
-      
-      // Перенаправление ввода (если нужно)
-      if (commands[i].in != -1 && commands[i].in != STDIN_FILENO) {
-        dup2(commands[i].in, STDIN_FILENO);
-        if (commands[i].in > 2) {
-          close(commands[i].in);
-        }
-      }
-      
-      // Перенаправление вывода (если нужно)
-      if (commands[i].out != -1 && commands[i].out != STDOUT_FILENO) {
-        dup2(commands[i].out, STDOUT_FILENO);
-        if (commands[i].out > 2) {
-          close(commands[i].out);
-        }
-      }
-      
-      // Закрываем все pipe в дочернем процессе
-      for (int j = 0; j < num_pipes; j++) {
-        close(pipes[j][READ]);
-        close(pipes[j][WRITE]);
-      }
-      
-      // Выполнение команды
-      execvp(commands[i].argv[0], commands[i].argv);
-      
-      fprintf(stderr, "shell: command not found: %s\n", commands[i].argv[0]);
+  // ШАГ 1: Создаём все pipe (n-1 штук)
+  for (int i = 0; i < num_pipes; i++) {
+    if (pipe(pipes[i]) == -1) {
+      perror("pipe failed");
       exit(EXIT_FAILURE);
-      break;
     }
-      
-    default:
-      // Родительский процесс - ничего не делаем, просто возвращаемся
-      break;
-  }
-}
-
-/**
- *  fork одного дочернего процесса для каждой команды в конвейере команд.
- */
-void fork_commands(int n) {
-  for (int i = 0; i < n; i++) {
-    fork_cmd(i, n);
   }
   
-  // Закрываем все pipe в родительском процессе
-  // (pipes хранятся статически в fork_cmd, доступа к ним нет)
-  // Поэтому pipe закрываются в родителе после fork_commands?
+  // ШАГ 2: Создаём все дочерние процессы
+  for (int i = 0; i < n; i++) {
+    pid_t pid = fork();
+    
+    switch(pid) {
+      case -1:
+        // Ошибка fork
+        fork_error();
+        break;
+        
+      case 0:
+        // === ДОЧЕРНИЙ ПРОЦЕСС ===
+        
+        // Перенаправление ввода (не для первой команды)
+        if (i > 0) {
+          dup2(pipes[i-1][READ], STDIN_FILENO);
+        }
+        
+        // Перенаправление вывода (не для последней команды)
+        if (i < n - 1) {
+          dup2(pipes[i][WRITE], STDOUT_FILENO);
+        }
+        
+        // Закрываем все pipe в дочернем процессе
+        for (int j = 0; j < num_pipes; j++) {
+          close(pipes[j][READ]);
+          close(pipes[j][WRITE]);
+        }
+        
+        // Перенаправление из файлов (если указаны)
+        if (commands[i].in != -1) {
+          dup2(commands[i].in, STDIN_FILENO);
+          if (commands[i].in > 2) {
+            close(commands[i].in);
+          }
+        }
+        if (commands[i].out != -1) {
+          dup2(commands[i].out, STDOUT_FILENO);
+          if (commands[i].out > 2) {
+            close(commands[i].out);
+          }
+        }
+        
+        // Запускаем команду
+        execvp(commands[i].argv[0], commands[i].argv);
+        
+        // Если сюда дошли - команда не найдена
+        fprintf(stderr, "shell: command not found: %s\n", commands[i].argv[0]);
+        exit(EXIT_FAILURE);
+        break;
+        
+      default:
+        // === РОДИТЕЛЬСКИЙ ПРОЦЕСС ===
+        pids[i] = pid;
+        break;
+    }
+  }
+  
+  // ШАГ 3: Родительский процесс закрывает все pipe
+  for (int i = 0; i < num_pipes; i++) {
+    close(pipes[i][READ]);
+    close(pipes[i][WRITE]);
+  }
+  
+  // ШАГ 4: Родительский процесс ждёт завершения всех детей
+  for (int i = 0; i < n; i++) {
+    wait(NULL);
+  }
 }
 
 int main() {
@@ -158,7 +156,7 @@ int main() {
     
     if (strlen(line) == 0) continue;
     
-    // Обработка !!
+    // Обработка !! (используем сохранённую в last_command команду)
     if (strcmp(line, "!!") == 0) {
       if (last_command == NULL) {
         printf("Нет команд в истории\n");
@@ -168,7 +166,7 @@ int main() {
       strcpy(line, last_command);
     }
     
-    // Сохраняем команду в буфер
+    // Сохраняем команду в буфер (для !!)
     if (last_command != NULL) {
       free(last_command);
     }
@@ -181,14 +179,10 @@ int main() {
     printf("shell: command found: %s\n", commands[0].argv[0]);
     print_commands(n);
     
-    fork_commands(n);
-    
-    // Ждём завершения всех дочерних процессов
-    for (int i = 0; i < n; i++) {
-      wait(NULL);
-    }
+    fork_cmd(n);
   }
 
+  // Очистка буфера при выходе
   if (last_command != NULL) {
     free(last_command);
   }
