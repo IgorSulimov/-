@@ -1,4 +1,5 @@
-#include "parser.h"
+#include "parser.h"    // cmd_t, position_t, parse_commands()
+
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -11,21 +12,34 @@
 
 #define READ  0
 #define WRITE 1
-#define HISTORY_FILE ".shell_history"
 #define MAX_COMMANDS 16
 
+/**
+ * Для простоты мы используем глобальный массив для хранения данных каждой команды в
+ * конвейере команд.
+ */
 cmd_t commands[MAX_COMMANDS];
 
+// Буфер для последней команды (только в памяти)
+char *last_command = NULL;
+
+/**
+ *  Отладочная распечатка массива команд.
+ */
 void print_commands(int n) {
   for (int i = 0; i < n; i++) {
     printf("==> commands[%d]\n", i);
     printf("  pos = %s\n", position_to_string(commands[i].pos));
     printf("  in  = %d\n", commands[i].in);
     printf("  out = %d\n", commands[i].out);
+
     print_argv(commands[i].argv);
   }
 }
 
+/**
+ * Возвращает true, если файловый дескриптор fd открыт. В противном случае возвращается false.
+ */
 int is_open(int fd) {
   return fcntl(fd, F_GETFL) != -1 || errno != EBADF;
 }
@@ -35,42 +49,31 @@ void fork_error() {
   exit(EXIT_FAILURE);
 }
 
-void save_to_history(const char *cmd) {
-  FILE *f = fopen(HISTORY_FILE, "w");
-  if (f) {
-    fprintf(f, "%s\n", cmd);
-    fclose(f);
+// Сохранение команды в буфер
+void save_to_buffer(const char *cmd) {
+  if (last_command != NULL) {
+    free(last_command);
   }
+  last_command = strdup(cmd);
 }
 
-char* get_from_history() {
-  FILE *f = fopen(HISTORY_FILE, "r");
-  if (!f) return NULL;
-  
-  char *line = NULL;
-  size_t len = 0;
-  if (getline(&line, &len, f) == -1) {
-    free(line);
-    line = NULL;
+// Получение последней команды из буфера
+char* get_from_buffer() {
+  if (last_command == NULL) {
+    return NULL;
   }
-  fclose(f);
-  
-  if (line) {
-    size_t l = strlen(line);
-    if (l > 0 && line[l-1] == '\n') line[l-1] = '\0';
-  }
-  return line;
+  return strdup(last_command);
 }
 
 /**
- * ГЛАВНАЯ ФУНКЦИЯ - запуск конвейера
+ * ЕДИНАЯ ФУНКЦИЯ: запуск конвейера команд
  */
-void fork_commands(int n) {
+void run_pipeline(int n) {
   int pipes[MAX_COMMANDS][2];
   pid_t pids[MAX_COMMANDS];
   int num_pipes = n - 1;
   
-  // Создаём все pipe (n-1 штук)
+  // ШАГ 1: Создаём все pipe (n-1 штук)
   for (int i = 0; i < num_pipes; i++) {
     if (pipe(pipes[i]) == -1) {
       perror("pipe failed");
@@ -78,7 +81,7 @@ void fork_commands(int n) {
     }
   }
   
-  // Создаём дочерние процессы
+  // ШАГ 2: Создаём все дочерние процессы
   for (int i = 0; i < n; i++) {
     pids[i] = fork();
     
@@ -106,7 +109,6 @@ void fork_commands(int n) {
       }
       
       // Перенаправление из файлов (если указаны)
-      // НЕ закрываем дескрипторы 0,1,2 (stdin, stdout, stderr)
       if (commands[i].in != -1) {
         dup2(commands[i].in, STDIN_FILENO);
         if (commands[i].in > 2) {
@@ -129,33 +131,21 @@ void fork_commands(int n) {
     }
   }
   
-  // === РОДИТЕЛЬСКИЙ ПРОЦЕСС ===
-  
-  // Закрываем все pipe в родителе
+  // ШАГ 3: Родительский процесс закрывает все pipe
   for (int i = 0; i < num_pipes; i++) {
     close(pipes[i][READ]);
     close(pipes[i][WRITE]);
   }
-}
-
-/**
- * Ожидание завершения всех дочерних процессов
- */
-void wait_for_all_cmds(int n) {
-  int status;
-  pid_t pid;
   
-  // Ждём завершения всех дочерних процессов
-  while ((pid = wait(&status)) > 0) {
-    // Можно вывести информацию о завершении процесса (опционально)
-    if (WIFEXITED(status)) {
-      // Процесс завершился нормально
-    } else if (WIFSIGNALED(status)) {
-      fprintf(stderr, "Process %d terminated by signal %d\n", pid, WTERMSIG(status));
-    }
+  // ШАГ 4: Родительский процесс ждёт завершения всех детей
+  for (int i = 0; i < n; i++) {
+    wait(NULL);
   }
 }
 
+/**
+ * Считывает командную строку от пользователя
+ */
 void get_line(char* buffer, size_t size) {
   if (fgets(buffer, size, stdin) == NULL) {
     printf("\n");
@@ -182,7 +172,7 @@ int main() {
     
     // Обработка !!
     if (strcmp(line, "!!") == 0) {
-      char *last = get_from_history();
+      char *last = get_from_buffer();
       if (last == NULL) {
         printf("Нет команд в истории\n");
         continue;
@@ -192,7 +182,8 @@ int main() {
       free(last);
     }
     
-    save_to_history(line);
+    // Сохраняем команду в буфер
+    save_to_buffer(line);
 
     n = parse_commands(line, commands);
     
@@ -201,8 +192,13 @@ int main() {
     printf("shell: command found: %s\n", commands[0].argv[0]);
     print_commands(n);
     
-    fork_commands(n);
-    wait_for_all_cmds(n);  // ТЕПЕРЬ РАБОТАЕТ!
+    // Запускаем конвейер (одна функция вместо fork_commands + fork_cmd)
+    run_pipeline(n);
+  }
+
+  // Очистка буфера при выходе
+  if (last_command != NULL) {
+    free(last_command);
   }
 
   exit(EXIT_SUCCESS);
