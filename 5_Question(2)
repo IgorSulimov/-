@@ -13,7 +13,7 @@
 #define READ  0
 #define WRITE 1
 #define MAX_COMMANDS 16
-
+void wait_for_all_cmds(int n);
 /**
  * Для простоты мы используем глобальный массив для хранения данных каждой команды в
  * конвейере команд.
@@ -34,7 +34,6 @@ void print_commands(int n) {
 
     print_argv(commands[i].argv);
   }
-
 }
 
 /**
@@ -86,7 +85,7 @@ void fork_cmd(int n) {
         break;
         
       case 0:
-        // Дочерний процесс после успешного завершения fork().
+        // Дочерний процесс 
 
         if (commands[i].in != -1 && commands[i].in != STDIN_FILENO) {
           dup2(commands[i].in, STDIN_FILENO);
@@ -102,16 +101,15 @@ void fork_cmd(int n) {
           close(pipes[j][WRITE]);
         }
         
-        // Выполнение команды в контексте дочернего процесса.
+        // Выполнение команды 
         execvp(commands[i].argv[0], commands[i].argv);
 
-        // Если execvp() завершится успешно, этот код никогда не должен быть достигнут.
+  
         fprintf(stderr, "shell: command not found: %s\n", commands[i].argv[0]);
         exit(EXIT_FAILURE);
         break;
         
       default:
-        // Родительский процесс после успешного завершения fork().
         pids[i] = pid;
         break;
     }
@@ -122,17 +120,9 @@ void fork_cmd(int n) {
     close(pipes[i][WRITE]);
   }
   
-  for (int i = 0; i < n; i++) {
-    wait(NULL);
-  }
+  wait_for_all_cmds(n);
 }
 
-/**
- *  fork одного дочернего процесса для каждой команды в конвейере команд.
- */
-void fork_commands(int n) {
-  fork_cmd(n);
-}
 
 /**
  * Считывает командную строку от пользователя и сохраняет строку в 
@@ -147,7 +137,9 @@ void get_line(char* buffer, size_t size) {
  * Заставьте родителей ждать все дочерние процессы.
  */
 void wait_for_all_cmds(int n) {
-  // Уже реализовано в fork_cmd
+    for (int i = 0; i < n; i++) {
+    wait(NULL);
+  }
 }
 
 int main() {
@@ -183,7 +175,7 @@ int main() {
     
     printf("shell: command found: %s\n", commands[0].argv[0]);
     
-    fork_commands(n);
+    fork_cmd(n);
   }
 
   if (last_command != NULL) {
