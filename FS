@@ -1,0 +1,179 @@
+#include <iostream>
+#include <string>
+#include <shared_mutex>
+#include <thread>
+#include <vector>
+#include <map>
+using namespace std;
+
+struct File {
+    string name;
+    string content;
+    shared_mutex mutex;
+
+    File(string file_name) {
+        name = file_name;
+        content = "";
+    }
+};
+
+map<string, File*> files;
+shared_mutex global_mutex;
+
+
+bool creat(const string& filename) {
+    unique_lock<shared_mutex> lock(global_mutex);
+
+
+    if (files.find(filename) != files.end()) {
+        cout << "Файл '" << filename << "' уже существует\n";
+        return false;
+    }
+
+    files[filename] = new File(filename);
+    cout << "CREATE: '" << filename << "'\n";
+
+
+    return true;
+}
+
+
+bool delete_file(const string& filename) {
+    unique_lock<shared_mutex> lock(global_mutex);
+
+
+    auto it = files.find(filename);
+    if (it == files.end()) {
+        cout << "Файл '" << filename << "' не найден\n";
+        return false;
+    }
+
+    unique_lock<shared_mutex> file_lock(it->second->mutex);
+
+    delete it->second;
+    files.erase(it);
+
+    cout << "DELETE: '" << filename << "'\n";
+    return true;
+}
+
+
+bool write(const string& filename, const string& data) {
+    File* target_file = nullptr;
+
+
+    shared_lock<shared_mutex> global_lock(global_mutex);
+
+
+    auto it = files.find(filename);
+    if (it == files.end()) {
+        cout << "Файл '" << filename << "' не найден\n";
+        global_lock.unlock(); 
+        return false;
+    }
+
+    target_file = it->second;
+    cout << "WRITE: нашел файл '" << filename << "'\n";
+
+    global_lock.unlock(); 
+
+
+
+    unique_lock<shared_mutex> file_lock(target_file->mutex);
+
+
+    target_file->content = target_file->content + data;
+    cout << "WRITE: записал в '" << filename << "'\n";
+
+    return true;
+}
+
+
+string read(const string& filename) {
+    File* target_file = nullptr;
+
+
+    shared_lock<shared_mutex> global_lock(global_mutex);
+
+
+    auto it = files.find(filename);
+    if (it == files.end()) {
+        cout << "Файл '" << filename << "' не найден\n";
+        global_lock.unlock();  // ЯВНО освобождаем перед выходом
+        return "";
+    }
+
+    target_file = it->second;
+    cout << "READ: нашел файл '" << filename << "'\n";
+
+    global_lock.unlock();  
+
+
+
+    shared_lock<shared_mutex> file_lock(target_file->mutex);
+
+
+    cout << "READ: прочитал '" << filename << "'\n";
+    string content = target_file->content;
+
+
+    return content;
+}
+
+
+bool move_file(const string& old_name, const string& new_name) {
+    unique_lock<shared_mutex> global_lock(global_mutex);
+
+
+    auto it = files.find(old_name);
+    if (it == files.end()) {
+        cout << "Файл '" << old_name << "' не найден\n";
+        return false;
+    }
+
+    if (files.find(new_name) != files.end()) {
+        cout << "Файл '" << new_name << "' уже существует\n";
+        return false;
+    }
+
+    unique_lock<shared_mutex> file_lock(it->second->mutex);
+
+    File* file_ptr = it->second;
+    file_ptr->name = new_name;
+    files.erase(it);
+    files[new_name] = file_ptr;
+
+    cout << "MOVE: '" << old_name << "' -> '" << new_name << "'\n";
+    return true;
+}
+
+int main() {
+    setlocale(LC_ALL, "Russian");
+
+    vector<thread> threads;
+    auto test_operations = []() {
+        creat("file1.txt");
+        write("file1.txt", "Hello ");
+        read("file1.txt");
+        write("file1.txt", "World");
+        read("file1.txt");
+        move_file("file1.txt", "file2.txt");
+        read("file2.txt");
+        delete_file("file2.txt");
+        };
+
+
+    threads.push_back(thread(test_operations));
+    threads.push_back(thread(test_operations));
+    threads.push_back(thread(test_operations));
+
+    for (auto& t : threads) {
+        t.join();
+    }
+
+    for (auto& pair : files) {
+        delete pair.second;
+    }
+
+    return 0;
+}
