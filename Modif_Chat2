@@ -1,0 +1,137 @@
+#include <stdio.h>
+#include <string.h>
+#include <semaphore>
+#include <thread>
+#include <chrono>
+#include <iostream>
+#include <vector>
+#include <windows.h>
+using namespace std;
+
+#define MAX_MSG 256
+
+std::counting_semaphore<1> sem_write(1);
+std::counting_semaphore<1> sem_read(0);
+void write();
+void read();
+
+HANDLE hMapFile2;     // Только второй буфер (без файла)
+char* pBuf2;          // Указатель на разделяемую память
+
+void InitSharedMemory() {
+    // Создаем ТОЛЬКО второй буфер - в чистой разделяемой памяти
+    hMapFile2 = CreateFileMapping(
+        INVALID_HANDLE_VALUE,  // Нет связи с файлом!
+        NULL,
+        PAGE_READWRITE,
+        0,
+        1024,
+        L"MySharedMemory"
+    );
+
+    if (hMapFile2 == NULL) {
+        printf("Ошибка создания разделяемой памяти! Код: %d\n", GetLastError());
+        return;
+    }
+
+    pBuf2 = (char*)MapViewOfFile(
+        hMapFile2,
+        FILE_MAP_ALL_ACCESS,
+        0, 0, 0
+    );
+
+    if (pBuf2 == NULL) {
+        printf("Ошибка отображения памяти! Код: %d\n", GetLastError());
+        CloseHandle(hMapFile2);
+        return;
+    }
+
+    // Инициализируем буфер
+    strcpy_s(pBuf2, 1024, "Чат начат!");
+    printf("Разделяемая память создана (без файла на диске)\n");
+}
+
+void CleanupSharedMemory() {
+    if (pBuf2) {
+        UnmapViewOfFile(pBuf2);
+    }
+    if (hMapFile2) {
+        CloseHandle(hMapFile2);
+    }
+}
+
+void chat()
+{
+    thread th_read(read);
+    thread th_write(write);
+
+    th_read.join();
+    th_write.join();
+}
+
+void read() {
+    char last_message[MAX_MSG] = "";
+    
+    while (1)
+    {
+        sem_read.acquire();
+
+        // Читаем ТОЛЬКО из второго буфера
+        if (pBuf2 != NULL && strlen(pBuf2) > 0) {
+            if (strcmp(pBuf2, last_message) != 0) {
+                printf("\n[ПРОЧИТАНО] %s\n", pBuf2);
+                strcpy_s(last_message, MAX_MSG, pBuf2);
+            }
+        }
+
+        sem_write.release();
+        
+        if (pBuf2 != NULL && strcmp(pBuf2, "exit") == 0) {
+            break;
+        }
+    }
+}
+
+void write()
+{
+    char input[MAX_MSG];
+
+    while (1) {
+        sem_write.acquire();
+
+        printf("\nВведите текст (или 'exit' для выхода): ");
+        fgets(input, MAX_MSG, stdin);
+        input[strcspn(input, "\n")] = 0;
+
+        // Используем ТОЛЬКО второй буфер (без FlushViewOfFile, т.к. нет файла)
+        if (pBuf2 != NULL) {
+            strcpy_s(pBuf2, 1024, input);
+            // НЕ вызываем FlushViewOfFile - нет файла на диске!
+            printf("[ЗАПИСАНО] %s\n", input);
+        }
+
+        if (strcmp(input, "exit") == 0) {
+            sem_read.release();
+            break;
+        }
+
+        sem_read.release();
+    }
+}
+
+int main()
+{
+    setlocale(LC_ALL, "Russian");
+
+    printf("=== ЧАТ ТОЛЬКО НА РАЗДЕЛЯЕМОЙ ПАМЯТИ (без файлов) ===\n");
+    printf("Данные хранятся ТОЛЬКО в RAM, не сохраняются на диск\n\n");
+    
+    InitSharedMemory();
+
+    chat();
+
+    CleanupSharedMemory();
+
+    printf("\nЧат завершен. Разделяемая память освобождена.\n");
+    return 0;
+}
