@@ -1,0 +1,187 @@
+#include <stdio.h>
+#include <string.h>
+#include <semaphore>
+#include <thread>
+#include <chrono>
+#include <iostream>
+#include <vector>
+#include <windows.h>
+using namespace std;
+
+#define MAX_MSG 256
+#define FILE_NAME "chat.txt"
+
+std::counting_semaphore<1> sem_write(1);
+std::counting_semaphore<1> sem_read(0);
+int user_id;
+void write();
+void read();
+
+
+HANDLE hFile;
+HANDLE hMapFile;
+char* pBuf;
+HANDLE hMapFile2;
+
+void InitSharedMemory() {
+
+    hFile = CreateFile(
+        L"chat.txt",
+        GENERIC_READ | GENERIC_WRITE,
+        FILE_SHARE_READ | FILE_SHARE_WRITE,
+        NULL,
+        OPEN_ALWAYS,
+        FILE_ATTRIBUTE_NORMAL,
+        NULL
+    );
+
+    hMapFile = CreateFileMapping(
+        hFile,
+        NULL,
+        PAGE_READWRITE,
+        0,
+        1024,
+        L"ChatFileMapping"
+    );
+
+    pBuf = (char*)MapViewOfFile(
+        hMapFile,
+        FILE_MAP_ALL_ACCESS,
+        0, 0, 0
+    );
+
+ 
+    strcpy_s(pBuf, 1024, "Hello!");
+    FlushViewOfFile(pBuf, 1024);
+
+
+    hMapFile2 = CreateFileMapping(
+        INVALID_HANDLE_VALUE,
+        NULL,
+        PAGE_READWRITE,
+        0,
+        1024,
+        L"MySharedMemory"
+    );
+}
+
+void CleanupSharedMemory() {
+    if (pBuf) {
+        UnmapViewOfFile(pBuf);
+    }
+    if (hMapFile) {
+        CloseHandle(hMapFile);
+    }
+    if (hMapFile2) {
+        CloseHandle(hMapFile2);
+    }
+    if (hFile) {
+        CloseHandle(hFile);
+    }
+}
+
+void chat()
+{
+    thread th_read(read);
+    thread th_write(write);
+
+    th_read.join();
+    th_write.join();
+}
+
+void create_chat_file()
+{
+    FILE* file;
+    fopen_s(&file, FILE_NAME, "w");
+    if (file != NULL)
+    {
+        printf("Файл чата создан\n");
+        fclose(file);
+    }
+    else
+    {
+        printf("Ошибка создания файла чата\n");
+    }
+}
+
+void read() {
+    char buffer[MAX_MSG];
+    FILE* file;
+    long last_pos = 0;
+
+    while (1)
+    {
+        sem_read.acquire();
+
+
+        if (pBuf != NULL && strlen(pBuf) > 0) {
+            printf("\nПрочитано: %s\n", pBuf);
+        }
+
+        fopen_s(&file, FILE_NAME, "r");
+        if (file != NULL) {
+            fseek(file, last_pos, SEEK_SET);
+
+            while (fgets(buffer, MAX_MSG, file) != NULL) {
+                buffer[strcspn(buffer, "\n")] = 0;
+                printf("\nПрочитано: %s\n", buffer);
+            }
+
+            last_pos = ftell(file);
+            fclose(file);
+        }
+
+        sem_write.release();
+    }
+}
+
+void write()
+{
+    char input[MAX_MSG];
+    FILE* file;
+
+    while (1) {
+        sem_write.acquire();
+
+        printf("Введите текст:");
+        fgets(input, MAX_MSG, stdin);
+        input[strcspn(input, "\n")] = 0;
+
+
+        if (pBuf != NULL) {
+            strcpy_s(pBuf, 1024, input);
+            FlushViewOfFile(pBuf, 1024);
+            printf("Записано: %s\n", input);
+        }
+
+        fopen_s(&file, FILE_NAME, "a");
+        if (file != NULL) {
+            fprintf(file, "%s\n", input);
+            fclose(file);
+        }
+
+        if (strcmp(input, "exit") == 0) {
+            exit(0);
+            break;
+        }
+
+        sem_read.release();
+    }
+}
+
+int main()
+{
+    setlocale(LC_ALL, "Russian");
+
+    InitSharedMemory();
+
+    create_chat_file();
+
+    printf("Для выхода введите 'exit'\n\n");
+
+    chat();
+
+    CleanupSharedMemory();
+
+    return 0;
+}
