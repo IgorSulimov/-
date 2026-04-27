@@ -1,0 +1,64 @@
+#include <stdio.h>
+#include <random>
+#include <thread>
+#include<chrono>
+#include <iostream>
+#include <mutex>
+using namespace std;
+int i = 0;
+
+mutex mtx;
+//
+//atomic<int> i(0);
+
+void atom_inc(atomic<int>* value)
+{
+    (*value)++;  
+}
+//void incrementer(atomic<int>* value)    atom
+//{
+//    for (int j = 0; j < 1000000; j++) {
+//        atom_inc(value);
+//    }
+//    cout << "ID thread =" << this_thread::get_id() << "\n";
+//}
+//void incrementer(int* value)    mutex 
+//{
+//    for (int j = 0; j < 1000000; j++) {
+//        mtx.lock();
+//        (*value)++;  
+//        mtx.unlock();
+//    }
+//    cout << "ID thread = " << this_thread::get_id() << "\n";
+//}
+void incrementer(int* value)
+{
+    for (int j = 0; j < 1000000; j++) {
+        (*value)++;
+    }
+    cout << "ID thread = " << this_thread::get_id() << "\n";
+}
+int main()
+{
+    setlocale(LC_ALL, "Russian");
+    int num_threads;
+    cout << "Введите количество потоков: ";
+    cin >> num_threads;
+
+    clock_t start = clock();
+    vector<thread> threads;
+    for (int j = 0; j < num_threads; ++j)
+    {
+        threads.push_back(thread(incrementer, &i));
+    }
+
+    for (int i = 0; i < threads.size(); ++i)
+    {
+        threads[i].join();
+    }
+    clock_t end = clock();
+    double elapsed = double(end - start) / CLOCKS_PER_SEC;
+    std::cout << "Elapsed time: " << elapsed << " seconds." << std::endl;
+    cout << i;
+    return 0;
+}
