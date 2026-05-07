@@ -46,7 +46,9 @@ int main() {
     // Ждем завершения потоков
     pthread_join(thread1, NULL);
     pthread_join(thread2, NULL);
+    
+    printf("total spin count = %lld\n", spin_count[0] + spin_count[1]);
     // Выводим результат
-    printf("counter = %d\n", counter);
+    printf("counter = %d (expected: %d)\n", counter, ITERATIONS * 2);
     return 0;
 }
