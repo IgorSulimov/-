@@ -1,0 +1,196 @@
+/**
+ * Безопасный для потоков ограниченный буфер
+ *
+ * Доступ нескольких потоков к общему ограниченному буферу.
+ */
+
+#include <stdio.h>     /* printf(), fprintf */
+#include <stdlib.h>    /* [s]rand() */
+#include <unistd.h>    /* sleep() */
+#include <pthread.h>   /* pthread_... */
+
+#define BUFFER_SIZE 5
+
+#define PRODUCERS 2
+#define CONSUMERS 4
+
+#define ITERATIONS 20
+#define PRODUCER_ITERATIONS (ITERATIONS / PRODUCERS)
+#define CONSUMER_ITERATIONS (ITERATIONS / CONSUMERS)
+
+/* ===== НАЧАЛО: реализация семафора на условных переменных ===== */
+typedef struct {
+    int value;
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+} my_sem_t;
+
+void my_sem_init(my_sem_t *s, int init) {
+    s->value = init;
+    pthread_mutex_init(&s->mutex, NULL);
+    pthread_cond_init(&s->cond, NULL);
+}
+
+void my_sem_wait(my_sem_t *s) {
+    pthread_mutex_lock(&s->mutex);
+    while (s->value == 0) {
+        pthread_cond_wait(&s->cond, &s->mutex);
+    }
+    s->value--;
+    pthread_mutex_unlock(&s->mutex);
+}
+
+void my_sem_post(my_sem_t *s) {
+    pthread_mutex_lock(&s->mutex);
+    s->value++;
+    pthread_cond_signal(&s->cond);
+    pthread_mutex_unlock(&s->mutex);
+}
+
+void my_sem_destroy(my_sem_t *s) {
+    pthread_mutex_destroy(&s->mutex);
+    pthread_cond_destroy(&s->cond);
+}
+/* ===== КОНЕЦ: реализация семафора на условных переменных ===== */
+
+typedef struct {
+    int value[BUFFER_SIZE];
+    int next_in, next_out;
+} buffer_t;
+
+buffer_t buffer;
+
+pthread_t consumer_tid[CONSUMERS], producer_tid[PRODUCERS];
+
+/* ДОБАВЛЕНО: объявление семафоров */
+my_sem_t empty;  // счетчик свободных мест в буфере
+my_sem_t full;   // счетчик занятых мест в буфере
+my_sem_t mutex;  // для эксклюзивного доступа к буферу
+
+/**
+ * insert_item - thread safe(?) функция для вставки элементов в ограниченный буфер
+ * @param item значение для вставки
+ * @return 0 в случае успеха -1 в противном случае
+ */
+int insert_item(int item, long int id) {
+    /* ДОБАВЛЕНО: проверка и ожидание, не переполнен ли буфер. Обеспечение эксклюзивности доступа */
+    my_sem_wait(&empty);     // ждем свободное место
+    my_sem_wait(&mutex);     // захватываем доступ к буферу
+    
+    buffer.value[buffer.next_in] = item;
+    buffer.next_in = (buffer.next_in + 1) % BUFFER_SIZE;
+    printf("producer %ld: inserted %d\n", id, item);
+    
+    my_sem_post(&mutex);     // освобождаем доступ к буферу
+    my_sem_post(&full);      // сигналим, что появился новый элемент
+    
+    return 0;
+}
+
+/**
+ * remove_item - thread safe(?) функция для удаления элементов в ограниченном буфере
+ * @param item адрес переменной, в которую будет записано удаленное значение
+ * @return 0 в случае успеха -1 в противном случае
+ */
+int remove_item(int *item, long int id) {
+    /* ДОБАВЛЕНО: проверка и ожидание, если буфер пуст. Обеспечение эксклюзивности доступа */
+    my_sem_wait(&full);      // ждем, пока есть хотя бы один элемент
+    my_sem_wait(&mutex);     // захватываем доступ к буферу
+    
+    *item = buffer.value[buffer.next_out];
+    buffer.value[buffer.next_out] = -1;
+    buffer.next_out = (buffer.next_out + 1) % BUFFER_SIZE;
+    printf("consumer %ld: removed %d\n", id, *item);
+    
+    my_sem_post(&mutex);     // освобождаем доступ к буферу
+    my_sem_post(&empty);     // сигналим, что освободилось место
+    
+    return 0;
+}
+
+/**
+ * producer - будет повторять итерацию PRODUCER_ITERATION и вызывать соответствующую
+ * функцию для вставки целого числа в ограниченный буфер
+ * @param param целочисленный идентификатор производителя, используемый для различения
+ * несколькими потоками производителей
+ * @return nothing
+ */
+void *producer(void *param) {
+    long int id = (long int)param;
+    printf("producer %ld started\n", id);
+    int i = PRODUCER_ITERATIONS;
+    while (i--) {
+        sleep(rand() % 3);
+        int item = rand() % 10000;
+        if (insert_item(item, id))
+            fprintf(stderr, "Ошибка при вставке в буфер\n");
+    }
+    pthread_exit(0);
+}
+
+/**
+ * consumer - будет повторять итерацию CONSUMER_ITERATION несколько раз и вызывать соответствующую 
+ * функцию для удаления целого числа из ограниченного буфера
+ * @param param целочисленный идентификатор производителя, используемый для различения
+ * несколькими потоками потребителей
+ * @return nothing
+ */
+void *consumer(void *param) {
+    int item;
+    long int id = (long int)param;
+    printf("consumer %ld started\n", id);
+    int i = CONSUMER_ITERATIONS;
+    while (i--) {
+        sleep(rand() % 3);
+        if (remove_item(&item, id))
+            fprintf(stderr, "Ошибка при удалении из буфера\n");
+    }
+    pthread_exit(0);
+}
+
+int main() {
+    long int i;
+
+    srand(time(NULL));
+
+    /* ДОБАВЛЕНО: инициализация семафоров */
+    my_sem_init(&empty, BUFFER_SIZE);  // изначально все места свободны
+    my_sem_init(&full, 0);             // изначально нет заполненных мест
+    my_sem_init(&mutex, 1);            // мьютекс для доступа к буферу
+
+    /* ДОБАВЛЕНО: инициализация буфера */
+    buffer.next_in = 0;
+    buffer.next_out = 0;
+
+    /* Создаем потоки потребителей */
+    for (i = 0; i < CONSUMERS; i++)
+        if (pthread_create(&consumer_tid[i], NULL, consumer, (void *)i) != 0) {
+            perror("pthread_create");
+            abort();
+        }
+    /* Создаем потоки производителей */
+    for (i = 0; i < PRODUCERS; i++)
+        if (pthread_create(&producer_tid[i], NULL, producer, (void *)i) != 0) {
+            perror("pthread_create");
+            abort();
+        }
+
+    /* Ожидаем завершения */
+    for (i = 0; i < CONSUMERS; i++)
+        if (pthread_join(consumer_tid[i], NULL) != 0) {
+            perror("pthread_join");
+            abort();
+        }
+    for (i = 0; i < PRODUCERS; i++)
+        if (pthread_join(producer_tid[i], NULL) != 0) {
+            perror("pthread_join");
+            abort();
+        }
+
+    /* ДОБАВЛЕНО: уничтожение семафоров */
+    my_sem_destroy(&empty);
+    my_sem_destroy(&full);
+    my_sem_destroy(&mutex);
+
+    return 0;
+}
