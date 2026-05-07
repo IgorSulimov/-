@@ -1,0 +1,96 @@
+#include <stdio.h>     /* printf() */
+#include <stdlib.h>    /* abort(), [s]rand() */
+#include <unistd.h>    /* sleep() */
+#include <pthread.h>   /* pthread_...() */
+
+#define LOOPS 5
+#define NTHREADS 3
+#define MAX_SLEEP_TIME 3
+
+/* ===== НАЧАЛО: реализация семафора на условных переменных ===== */
+typedef struct {
+    int value;
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+} my_sem_t;
+
+void my_sem_init(my_sem_t *s, int init) {
+    s->value = init;
+    pthread_mutex_init(&s->mutex, NULL);
+    pthread_cond_init(&s->cond, NULL);
+}
+
+void my_sem_wait(my_sem_t *s) {
+    pthread_mutex_lock(&s->mutex);
+    while (s->value == 0) {
+        pthread_cond_wait(&s->cond, &s->mutex);
+    }
+    s->value--;
+    pthread_mutex_unlock(&s->mutex);
+}
+
+void my_sem_post(my_sem_t *s) {
+    pthread_mutex_lock(&s->mutex);
+    s->value++;
+    pthread_cond_signal(&s->cond);
+    pthread_mutex_unlock(&s->mutex);
+}
+
+void my_sem_destroy(my_sem_t *s) {
+    pthread_mutex_destroy(&s->mutex);
+    pthread_cond_destroy(&s->cond);
+}
+/* ===== КОНЕЦ: реализация семафора на условных переменных ===== */
+
+/* Объявление семафоров для синхронизации потоков A и B */
+my_sem_t sem_a;
+my_sem_t sem_b;
+
+/* Заставьте два потока выполнять свои итерации в синхронном режиме. */
+void *threadA(void *param __attribute__((unused))) {
+    for (int i = 0; i < LOOPS; i++) {
+        my_sem_wait(&sem_a);     // ДОБАВЛЕНО: ждем разрешения
+        printf("A%d\n", i);
+        sleep(rand() % MAX_SLEEP_TIME);
+        my_sem_post(&sem_b);     // ДОБАВЛЕНО: разрешаем потоку B
+    }
+    pthread_exit(0);
+}
+
+/* Заставьте два потока выполнять свои итерации в синхронном режиме. */
+void *threadB(void *param __attribute__((unused))) {
+    for (int i = 0; i < LOOPS; i++) {
+        my_sem_wait(&sem_b);     // ДОБАВЛЕНО: ждем разрешения
+        printf("B%d\n", i);
+        sleep(rand() % MAX_SLEEP_TIME);
+        my_sem_post(&sem_a);     // ДОБАВЛЕНО: разрешаем потоку A
+    }
+    pthread_exit(0);
+}
+
+int main() {
+    pthread_t tidA, tidB;
+    
+    srand(time(NULL));
+    
+    /* ДОБАВЛЕНО: инициализация семафоров */
+    my_sem_init(&sem_a, 1);  // A начинает первым
+    my_sem_init(&sem_b, 0);  // B ждет
+    
+    if (pthread_create(&tidA, NULL, threadA, NULL) || pthread_create(&tidB, NULL, threadB, NULL)) {
+        perror("pthread_create");
+        abort();
+    }
+    
+    if (pthread_join(tidA, NULL) != 0 ||
+        pthread_join(tidB, NULL) != 0) {
+        perror("pthread_join");
+        abort();
+    }
+    
+    /* ДОБАВЛЕНО: уничтожение семафоров */
+    my_sem_destroy(&sem_a);
+    my_sem_destroy(&sem_b);
+    
+    return 0;
+}
