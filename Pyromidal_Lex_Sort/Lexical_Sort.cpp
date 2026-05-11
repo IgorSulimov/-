@@ -11,10 +11,10 @@ void My_Copy_String(char* str1, char* str2, int size_str)
 int my_strcmp(const char* str1, const char* str2, size_t len) {
     for (size_t i = 0; i < len; i++) {
         if (str1[i] != str2[i]) {
-            return (unsigned char)str1[i] - (unsigned char)str2[i]; // положительное - str1 > str2, отрицательное - str2 > str1
+            return (unsigned char)str1[i] - (unsigned char)str2[i]; // РїРѕР»РѕР¶РёС‚РµР»СЊРЅРѕРµ - str1 > str2, РѕС‚СЂРёС†Р°С‚РµР»СЊРЅРѕРµ - str2 > str1
         }
     }
-    return 0;//одинаковые
+    return 0;//РѕРґРёРЅР°РєРѕРІС‹Рµ
 }
 void Lexical_Sort(My_String* words_, int size_word_, int size_words_)
 {
@@ -31,7 +31,7 @@ void Lexical_Sort(My_String* words_, int size_word_, int size_words_)
     {
         main_que.Push_el(words_[words], size_word_);
     }
-    // k - Номер буквы, которую мы берём в слове
+    // k - РќРѕРјРµСЂ Р±СѓРєРІС‹, РєРѕС‚РѕСЂСѓСЋ РјС‹ Р±РµСЂС‘Рј РІ СЃР»РѕРІРµ
     for (int k = size_word_ - 1; k >= 0; k--)
     {
         int current_size = main_que.size_word_q;
@@ -50,7 +50,7 @@ void Lexical_Sort(My_String* words_, int size_word_, int size_words_)
             main_que.Pop_el();
         }
 
-        // Собираем все слова обратно в главную очередь
+        // РЎРѕР±РёСЂР°РµРј РІСЃРµ СЃР»РѕРІР° РѕР±СЂР°С‚РЅРѕ РІ РіР»Р°РІРЅСѓСЋ РѕС‡РµСЂРµРґСЊ
         for (int t = 0; t < 26; t++)
         {
             while (queues[t].start != nullptr)
@@ -61,7 +61,7 @@ void Lexical_Sort(My_String* words_, int size_word_, int size_words_)
         }
     }
 
-    // Копируем отсортированные слова обратно в массив
+    // РљРѕРїРёСЂСѓРµРј РѕС‚СЃРѕСЂС‚РёСЂРѕРІР°РЅРЅС‹Рµ СЃР»РѕРІР° РѕР±СЂР°С‚РЅРѕ РІ РјР°СЃСЃРёРІ
     Queue* current = main_que.start;
     int index = 0;
     while (current != nullptr && index < size_words_)
