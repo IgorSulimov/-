@@ -24,7 +24,7 @@ void read_words_from_file(const char* filename, My_String*& words)
 
     if (err != 0 || file == NULL)
     {
-        printf("Не удалось открыть файл: %s\n", filename);
+        printf("РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РєСЂС‹С‚СЊ С„Р°Р№Р»: %s\n", filename);
         size_words = 0;
         size_word = 0;
         return;
@@ -48,7 +48,7 @@ void read_words_from_file(const char* filename, My_String*& words)
         }
         else if (current_len != word_length)
         {
-            printf("Ошибка: В файле слова разной длины!\n");
+            printf("РћС€РёР±РєР°: Р’ С„Р°Р№Р»Рµ СЃР»РѕРІР° СЂР°Р·РЅРѕР№ РґР»РёРЅС‹!\n");
             fclose(file);
             size_words = 0;
             size_word = 0;
@@ -62,7 +62,7 @@ void read_words_from_file(const char* filename, My_String*& words)
 
     if (size_words == 0 || size_word <= 0)
     {
-        printf("Файл пуст или слова имеют нулевую длину!\n");
+        printf("Р¤Р°Р№Р» РїСѓСЃС‚ РёР»Рё СЃР»РѕРІР° РёРјРµСЋС‚ РЅСѓР»РµРІСѓСЋ РґР»РёРЅСѓ!\n");
         fclose(file);
         return;
     }
@@ -105,16 +105,16 @@ int main()
     My_String* words2 = nullptr;
     setlocale(LC_ALL, "");
     int variants;
-    cout << "Выберете способ заполнения слов:" << endl;
-    cout << "1.Файл" << endl;
-    cout << "2.Рандомные слова" << endl;
+    cout << "Р’С‹Р±РµСЂРµС‚Рµ СЃРїРѕСЃРѕР± Р·Р°РїРѕР»РЅРµРЅРёСЏ СЃР»РѕРІ:" << endl;
+    cout << "1.Р¤Р°Р№Р»" << endl;
+    cout << "2.Р Р°РЅРґРѕРјРЅС‹Рµ СЃР»РѕРІР°" << endl;
     cin >> variants;
     switch (variants)
     {
     case 1:
     {
         char file[120];
-        cout << "Введите имя файла" << endl;
+        cout << "Р’РІРµРґРёС‚Рµ РёРјСЏ С„Р°Р№Р»Р°" << endl;
         cin >> file;
         read_words_from_file(file, words1);
         words2 = new My_String[size_words];
@@ -127,13 +127,13 @@ int main()
     }
     case 2:
     {
-        cout << "Введите количество слов: ";
+        cout << "Р’РІРµРґРёС‚Рµ РєРѕР»РёС‡РµСЃС‚РІРѕ СЃР»РѕРІ: ";
         cin >> size_words;
-        cout << "Введите размер слов (один для всех): ";
+        cout << "Р’РІРµРґРёС‚Рµ СЂР°Р·РјРµСЂ СЃР»РѕРІ (РѕРґРёРЅ РґР»СЏ РІСЃРµС…): ";
         cin >> size_word;
 
-        cout << "Размер слов: " << size_word << endl;
-        cout << "Количество слов: " << size_words << endl << endl;
+        cout << "Р Р°Р·РјРµСЂ СЃР»РѕРІ: " << size_word << endl;
+        cout << "РљРѕР»РёС‡РµСЃС‚РІРѕ СЃР»РѕРІ: " << size_words << endl << endl;
 
         words1 = new My_String[size_words];
         words2 = new My_String[size_words];
@@ -150,13 +150,13 @@ int main()
         break;
     }
     default:
-        cout << "Неверный выбор!" << endl;
+        cout << "РќРµРІРµСЂРЅС‹Р№ РІС‹Р±РѕСЂ!" << endl;
         return -1;
 
     }
 
-    cout << "Размер слов: " << size_word << endl;
-    cout << "Количество слов: " << size_words << endl << endl;
+    cout << "Р Р°Р·РјРµСЂ СЃР»РѕРІ: " << size_word << endl;
+    cout << "РљРѕР»РёС‡РµСЃС‚РІРѕ СЃР»РѕРІ: " << size_words << endl << endl;
 
 
     //cout << "\nBefore sorting:\n";
