@@ -22,7 +22,33 @@ array dummy = {
 };
 // указатель на начало списка выделенных массивов
 array* allocated = &dummy;
-
+array* allocate(int size) {
+	array* nxt = allocated;
+	while (nxt->next != NULL) {
+		int free_space = (nxt->next->segment - (nxt->segment + nxt->size));
+		if (free_space >= size) {
+			// создать новый элемент array
+			array* new = (array*)malloc(sizeof(array));
+			if (new == NULL) return NULL;
+			
+			// TODO: инициализировать size
+			new->size = size;
+			
+			// TODO: установить segment на свободное место между nxt и nxt->next
+			new->segment = nxt->segment + nxt->size;
+			
+			// TODO: вставить новый элемент в связный список
+			// TODO: обновить указатели next
+			new->next = nxt->next;
+			nxt->next = new;
+			
+			// TODO: вернуть созданный массив, если выделение успешно
+			return new;
+		}
+		nxt = nxt->next;
+	}
+	return NULL; 
+}
 // Печатает текущее состояние списка выделенных массивов
 void check() {
 	const array* nxt = allocated;
