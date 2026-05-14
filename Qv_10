@@ -59,6 +59,27 @@ exit(-1);
 printf("done\n");
 return new;
 }
+// Удаляет элемент из списка и освобождает связанный сегмент памяти
+void delete(array *arr) {
+    printf("delete array (%p) of size %4d", arr, arr->size);
+    array *nxt = allocated;
+    array *prev = NULL;
+    // поиск удаляемого элемента в списке
+    while (nxt != arr) {
+        // TODO: сохранить текущий узел как предыдущий
+        prev = nxt;
+        // TODO: перейти к следующему узлу списка
+        nxt = nxt->next;
+    }
+    // TODO: исключить arr из связного списка (обновить next у prev)
+    prev->next = arr->next;
+    // TODO: освободить память структуры arr (free)
+    free(arr);
+    // TODO: при необходимости пометить сегмент памяти как свободный
+    // (в данном алгоритме ничего делать не нужно)
+    printf("done\n");
+    return;
+}
 // Печатает текущее состояние списка выделенных массивов
 void check() {
 	const array* nxt = allocated;
