@@ -63,7 +63,10 @@ void check() {
 		nxt = nxt->next;
 	}
 }
-int main() {
-	check();
-	return 0;
+int main(){
+array *a = allocate(10);
+array *b = allocate(10);
+array *c = allocate(10);
+check();
+return 0;
 }
