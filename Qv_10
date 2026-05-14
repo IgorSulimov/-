@@ -80,6 +80,70 @@ void delete(array *arr) {
     printf("done\n");
     return;
 }
+void bench1(){
+check();
+array *a = create(20);
+check ( ) ;
+array *b = create(30);
+check();
+set(a, 10, 110);
+set(a, 14, 114);
+set(b, 8, 208);
+set(b, 12, 212);
+printf("a[10]+a[14] = %d\n", get(a, 10) + get(a, 14));
+printf("b[8]+b[12] = %d\n", get(b, 8) + get(b, 12));
+delete(&a);
+check();
+delete(&b);
+check();
+}
+void bench2(){
+check();
+array *a = create(20);
+check ( ) ;
+array *b = create(30);
+check();
+set(a, 10, 110);
+set(a, 14, 114);
+set(b, 8, 208);
+set(b, 12, 212);
+printf("a[10]+a[14] = %d\n", get(a, 10) + get(a, 14));
+printf("b[8]+b[12] = %d\n", get(b, 8) + get(b, 12));
+delete(a);
+check();
+delete(b);
+check();
+}
+void bench3(){
+array *a = create(20);
+array *b = create(30);
+set(a, 22, 100);
+set(b, 0, 200);
+printf( "a[20] = %d\n", get(a, 20));
+printf( "b[0] = %d\n", get(b, 0));
+printf( "b[1] = %d\n", get(b, 1));
+printf( "b[2] = %d\n", get(b, 2));
+printf( "a[20] + b[2] = %d\n", get(a, 20)+get(b, 2));
+delete(&a);
+delete(&b);
+}
+void bench4(){
+array *a = create(20);
+array *b = create(30);
+array *c = create(30);
+delete(&b);
+check();
+array *d = create(50);
+delete(&a);
+delete(&c);
+delete(&d);
+}
+void set(array *arr, int pos, int val){
+arr->segment[pos-1] = val;
+}
+int get(array *arr, int pos){
+return arr->segment[pos-1];
+}
 // Печатает текущее состояние списка выделенных массивов
 void check() {
 	const array* nxt = allocated;
