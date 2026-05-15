@@ -138,11 +138,33 @@ delete(&a);
 delete(&c);
 delete(&d);
 }
-void set(array *arr, int pos, int val){
-arr->segment[pos-1] = val;
+void set(array *arr, int pos, int val) {
+    if (arr == NULL) {
+        printf("Error: cannot set value - array is NULL\n");
+        return;
+    }
+    
+    if (pos < 1 || pos > arr->size) {
+        printf("Error: index %d out of bounds for array of size %d (valid range: 1..%d)\n", 
+               pos, arr->size, arr->size);
+        return;
+    }
+    
+    arr->segment[pos-1] = val;
 }
-int get(array *arr, int pos){
-return arr->segment[pos-1];
+int get(array *arr, int pos) {
+    if (arr == NULL) {
+        printf("Error: cannot get value - array is NULL\n");
+        return 0;
+    }
+    
+    if (pos < 1 || pos > arr->size) {
+        printf("Error: index %d out of bounds for array of size %d (valid range: 1..%d)\n", 
+               pos, arr->size, arr->size);
+        return 0;
+    }
+    
+    return arr->segment[pos-1];
 }
 // Печатает текущее состояние списка выделенных массивов
 void check() {
