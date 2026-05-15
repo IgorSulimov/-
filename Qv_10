@@ -49,14 +49,26 @@ array* allocate(int size) {
 	}
 	return NULL; 
 }
-array *create(int size){
-printf("create an array of size %4d ..", size);
+array *create(int size) {
+printf("create an array of size %4d\n", size);
+// первая попытка выделения памяти
 array *new = allocate(size);
-if (new == NULL){
-printf("out of memory\n");
+if (new == NULL) {
+printf(".. almost panic, time for compaction\n");
+// компактизация памяти (сборка "мусора")
+compact();
+// вывод состояния после компактизации (для отладки)
+check();
+// повторная попытка
+new = allocate(size);
+}
+printf(".. pray for the best .. ");
+// если даже после компактизации памяти не хватает
+if (new == NULL) {
+printf("panic! memory full\n");
 exit(-1);
 }
-printf("done\n");
+printf("... yes!\n");
 return new;
 }
 // Удаляет элемент из списка и освобождает связанный сегмент памяти
@@ -163,6 +175,29 @@ int get(array *arr, int pos) {
     }
     
     return arr->segment[pos-1];
+}
+void compact() {
+    array *prev = allocated;
+    array *nxt = prev->next;
+    
+    // проходим по всем выделенным массивам
+    while (nxt->size != 0) {
+        // копируем данные nxt сразу за prev
+        for (int i = 0; i < nxt->size; i++) {
+            // скопировать i-й элемент из текущего сегмента nxt
+            // в новое место после prev
+            prev->segment[prev->size + i] = nxt->segment[i];
+        }
+        
+        // обновить указатель сегмента nxt
+        // (он должен указывать на новое место после prev)
+        nxt->segment = prev->segment + prev->size;
+        
+        // переход к следующему элементу
+        prev = nxt;
+        nxt = nxt->next;
+    }
+}
 }
 // Печатает текущее состояние списка выделенных массивов
 void check() {
