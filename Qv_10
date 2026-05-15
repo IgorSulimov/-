@@ -145,9 +145,8 @@ void set(array *arr, int pos, int val) {
     }
     
     if (pos < 1 || pos > arr->size) {
-        printf("Error: index %d out of bounds for array of size %d (valid range: 1..%d)\n", 
-               pos, arr->size, arr->size);
-        return;
+        printf("segmentation fault (core dumped)");
+        exit(-1);
     }
     
     arr->segment[pos-1] = val;
@@ -159,9 +158,8 @@ int get(array *arr, int pos) {
     }
     
     if (pos < 1 || pos > arr->size) {
-        printf("Error: index %d out of bounds for array of size %d (valid range: 1..%d)\n", 
-               pos, arr->size, arr->size);
-        return 0;
+        printf("segmentation fault (core dumped)");
+        return exit(-1);
     }
     
     return arr->segment[pos-1];
