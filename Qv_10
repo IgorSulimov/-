@@ -11,36 +11,8 @@ int memory[MEMORY]; // массив, моделирующий общую пам�
 typedef struct array {
 	int size; // размер массива (сколько ячеек занимает)
 	int* segment; // указатель на выделенный сегмент в общей памяти
-	int time;
 	struct array* next; // указатель на следующий массив в списке
 } array;
-int process_memory[100];  // память для каждого процесса
-int process_time[100];    // время выполнения для каждого процесса
-int process_count = 0;
-
-void add_process(int memory, int time) {
-    process_memory[process_count] = memory;
-    process_time[process_count] = time;
-    process_count++;
-    printf("Процесс добавлен (память=%d, время=%d)\n", memory, time);
-}
-
-void run_processes() {
-    for (int i = 0; i < process_count; i++) {
-        printf("\nЗапуск процесса %d: память=%d, время=%d\n", 
-               i+1, process_memory[i], process_time[i]);
-        
-        array* arr = create(process_memory[i]);
-        
-        if (arr != NULL) {
-            for (int t = 1; t <= process_time[i]; t++) {
-                printf("  Выполнение... %d/%d сек\n", t, process_time[i]);
-                sleep(1);
-            }
-            delete(arr);
-        }
-    }
-}
 // фиктивный (граничный) элемент списка
 // используется как "конец" списка размещённых массивов
 array sentinel = {
