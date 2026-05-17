@@ -1,3 +1,10 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
+#include <unistd.h>
+#include <assert.h>
+void check();
+void compact();
 #define MEMORY 100 // размер общей памяти (количество ячеек)
 int memory[MEMORY]; // массив, моделирующий общую память
 // структура, описывающая массив
@@ -57,7 +64,7 @@ if (new == NULL) {
 printf(".. almost panic, time for compaction\n");
 // компактизация памяти (сборка "мусора")
 compact();
-// вывод состояния после компактизации (для отладки)
+// вывод состояния
 check();
 // повторная попытка
 new = allocate(size);
@@ -71,6 +78,7 @@ exit(-1);
 printf("... yes!\n");
 return new;
 }
+
 // Удаляет элемент из списка и освобождает связанный сегмент памяти
 void delete(array *arr) {
     printf("delete array (%p) of size %4d", arr, arr->size);
@@ -87,68 +95,8 @@ void delete(array *arr) {
     prev->next = arr->next;
     // TODO: освободить память структуры arr (free)
     free(arr);
-    // TODO: при необходимости пометить сегмент памяти как свободный
-    // (в данном алгоритме ничего делать не нужно)
     printf("done\n");
     return;
-}
-void bench1(){
-check();
-array *a = create(20);
-check ( ) ;
-array *b = create(30);
-check();
-set(a, 10, 110);
-set(a, 14, 114);
-set(b, 8, 208);
-set(b, 12, 212);
-printf("a[10]+a[14] = %d\n", get(a, 10) + get(a, 14));
-printf("b[8]+b[12] = %d\n", get(b, 8) + get(b, 12));
-delete(&a);
-check();
-delete(&b);
-check();
-}
-void bench2(){
-check();
-array *a = create(20);
-check ( ) ;
-array *b = create(30);
-check();
-set(a, 10, 110);
-set(a, 14, 114);
-set(b, 8, 208);
-set(b, 12, 212);
-printf("a[10]+a[14] = %d\n", get(a, 10) + get(a, 14));
-printf("b[8]+b[12] = %d\n", get(b, 8) + get(b, 12));
-delete(a);
-check();
-delete(b);
-check();
-}
-void bench3(){
-array *a = create(20);
-array *b = create(30);
-set(a, 22, 100);
-set(b, 0, 200);
-printf( "a[20] = %d\n", get(a, 20));
-printf( "b[0] = %d\n", get(b, 0));
-printf( "b[1] = %d\n", get(b, 1));
-printf( "b[2] = %d\n", get(b, 2));
-printf( "a[20] + b[2] = %d\n", get(a, 20)+get(b, 2));
-delete(&a);
-delete(&b);
-}
-void bench4(){
-array *a = create(20);
-array *b = create(30);
-array *c = create(30);
-delete(&b);
-check();
-array *d = create(50);
-delete(&a);
-delete(&c);
-delete(&d);
 }
 void set(array *arr, int pos, int val) {
     if (arr == NULL) {
@@ -157,7 +105,7 @@ void set(array *arr, int pos, int val) {
     }
     
     if (pos < 1 || pos > arr->size) {
-        printf("segmentation fault (core dumped)");
+        printf("segmentation fault (core dumped)\n");
         exit(-1);
     }
     
@@ -170,8 +118,8 @@ int get(array *arr, int pos) {
     }
     
     if (pos < 1 || pos > arr->size) {
-        printf("segmentation fault (core dumped)");
-        return exit(-1);
+        printf("segmentation fault (core dumped)\n");
+        exit(-1);
     }
     
     return arr->segment[pos-1];
@@ -198,7 +146,7 @@ void compact() {
         nxt = nxt->next;
     }
 }
-}
+
 // Печатает текущее состояние списка выделенных массивов
 void check() {
 	const array* nxt = allocated;
@@ -214,9 +162,15 @@ void check() {
 	}
 }
 int main(){
-array *a = allocate(10);
-array *b = allocate(10);
-array *c = allocate(10);
+
+array *a = create(20);
+array *b = create(30);
+array *c = create(30);
+delete(b);
 check();
+array *d = create(50);
+delete(a);
+delete(c);
+delete(d);
 return 0;
 }
