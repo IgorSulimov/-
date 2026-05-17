@@ -5,7 +5,7 @@
 #include <assert.h>
 void check();
 void compact();
-#define MEMORY 100 // размер общей памяти (количество ячеек)
+#define MEMORY 1000 // размер общей памяти (количество ячеек)
 int memory[MEMORY]; // массив, моделирующий общую память
 // структура, описывающая массив
 typedef struct array {
@@ -23,7 +23,7 @@ NULL // дальше элементов нет
 // фиктивный начальный элемент списка
 // упрощает обработку граничных случаев при поиске свободного места
 array dummy = {
-1, // формальный размер (не важен)
+201, // формальный размер (не важен)
 &memory[-1], // указатель "перед началом" памяти
 &sentinel // следующий элемент — sentinel
 };
@@ -162,15 +162,26 @@ void check() {
 	}
 }
 int main(){
-
-array *a = create(20);
-array *b = create(30);
-array *c = create(30);
-delete(b);
+array *p1 = create(200);
+array *p2 = create(300);
+array *p3 = create(250);
+printf("\n\n");
 check();
-array *d = create(50);
-delete(a);
-delete(c);
-delete(d);
+printf("\n\n");
+delete(p2);
+printf("\n\n");
+check();
+printf("\n\n");
+array *p4 = create(250);
+printf("\n\n");
+check();
+printf("\n\n");
+compact();
+printf("\n\n");
+check();
+printf("\n\n");
+array *p5 = create(70);
+printf("\n\n");
+check();
 return 0;
 }
