@@ -1,0 +1,7 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="Pyromidal_Lex_Sort/Pyromidal_Lex_Sort.vcxproj" Id="e18d1f69-eae3-4936-8f92-6661a06ea616" />
+</Solution>

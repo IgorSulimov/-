@@ -1,0 +1,3 @@
+﻿  main.cpp
+C:\Users\Igor\source\repos\Pyromidal_Lex_Sort\Pyromidal_Lex_Sort\main.cpp(102,15): warning C4244: аргумент: преобразование "time_t" в "unsigned int", возможна потеря данных
+  Pyromidal_Lex_Sort.vcxproj -> C:\Users\Igor\source\repos\Pyromidal_Lex_Sort\x64\Debug\Pyromidal_Lex_Sort.exe
