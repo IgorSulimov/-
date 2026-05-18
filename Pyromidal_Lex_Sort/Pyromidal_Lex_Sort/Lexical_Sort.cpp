@@ -11,10 +11,10 @@ void My_Copy_String(char* str1, char* str2, int size_str)
 int my_strcmp(const char* str1, const char* str2, size_t len) {
     for (size_t i = 0; i < len; i++) {
         if (str1[i] != str2[i]) {
-            return (unsigned char)str1[i] - (unsigned char)str2[i]; // положительное - str1 > str2, отрицательное - str2 > str1
+            return (unsigned char)str1[i] - (unsigned char)str2[i]; // РїРѕР»РѕР¶РёС‚РµР»СЊРЅРѕРµ - str1 > str2, РѕС‚СЂРёС†Р°С‚РµР»СЊРЅРѕРµ - str2 > str1
         }
     }
-    return 0;//одинаковые
+    return 0;//РѕРґРёРЅР°РєРѕРІС‹Рµ
 }
 void Lexical_Sort(My_String* words_, int size_word_, int size_words_)
 {
@@ -46,17 +46,17 @@ void Lexical_Sort(My_String* words_, int size_word_, int size_words_)
 
             if (queue_index >= 0 && queue_index < 26)
             {
-                // Берём указатель на текущий узел
+                // Р‘РµСЂС‘Рј СѓРєР°Р·Р°С‚РµР»СЊ РЅР° С‚РµРєСѓС‰РёР№ СѓР·РµР»
                 Queue* current_node = main_que.start;
 
-                // Удаляем из main_que
+                // РЈРґР°Р»СЏРµРј РёР· main_que
                 main_que.Pop_el();
 
-                // Очищаем связи узла
+                // РћС‡РёС‰Р°РµРј СЃРІСЏР·Рё СѓР·Р»Р°
                 current_node->next = nullptr;
                 current_node->prev = nullptr;
 
-                // Добавляем в побочную очередь
+                // Р”РѕР±Р°РІР»СЏРµРј РІ РїРѕР±РѕС‡РЅСѓСЋ РѕС‡РµСЂРµРґСЊ
                 if (queues[queue_index].start == nullptr)
                 {
                     queues[queue_index].start = current_node;
@@ -72,7 +72,7 @@ void Lexical_Sort(My_String* words_, int size_word_, int size_words_)
             }
         }
 
-        // Соединяем побочные очереди
+        // РЎРѕРµРґРёРЅСЏРµРј РїРѕР±РѕС‡РЅС‹Рµ РѕС‡РµСЂРµРґРё
         Queue* first_start = nullptr;
         Queue* last_end = nullptr;
 
@@ -94,7 +94,7 @@ void Lexical_Sort(My_String* words_, int size_word_, int size_words_)
             }
         }
 
-        // Восстанавливаем main_que
+        // Р’РѕСЃСЃС‚Р°РЅР°РІР»РёРІР°РµРј main_que
         if (first_start != nullptr)
         {
             main_que.start = first_start;
@@ -102,7 +102,7 @@ void Lexical_Sort(My_String* words_, int size_word_, int size_words_)
             main_que.size_word_q = current_size;
         }
 
-        // Очищаем побочные очереди
+        // РћС‡РёС‰Р°РµРј РїРѕР±РѕС‡РЅС‹Рµ РѕС‡РµСЂРµРґРё
         for (int t = 0; t < 26; t++)
         {
             queues[t].start = nullptr;
