@@ -1,44 +1,50 @@
 #include <stdio.h>
 #include <pthread.h>
-// Глобальная переменная для блокировки
+#include <stdlib.h>
+#include <sched.h>
+
 volatile int _lock = 0;
-volatile int all_in_spin = 0;
-// Функция для захвата блокировки
-void lock(volatile int *lock) {
+volatile long long all_in_spin = 0;
+int iterations;
+
+int lock(volatile int *lock) {
+    int spin = 0;
     while (__sync_lock_test_and_set(lock, 1)) {
-        // Активное ожидание (busy-waiting), 
-		// пока блокировка не освободится
+        spin++;
+        sched_yield();
     }
+    return spin;
 }
-// Функция для освобождения блокировки
+
 void unlock(volatile int *lock) {
-	*lock = 0;// Освобождаем ресурс
+    *lock = 0;
 }
-// Общий ресурс
-int counter = 0;
-// Функция, которую выполняют потоки
+
+long long counter = 0;
+
 void* thread_function(void* arg) {
-    for (int i = 0; i < 1000000000; i++) {
-        all_in_spin += lock(&_lock); // Захватываем блокировку
-        counter++;      // Работаем с общим ресурсом
-        unlock(&_lock); // Освобождаем блокировку
+    long long local_spin_sum = 0;
+    for (int i = 0; i < iterations; i++) {
+        local_spin_sum += lock(&_lock);
+        counter++;
+        unlock(&_lock);
     }
+    __sync_fetch_and_add(&all_in_spin, local_spin_sum);
     return NULL;
 }
-int main(int argc, char*argv[]) {
+
+int main(int argc, char* argv[]) {
     pthread_t thread1, thread2;
-    // Создаем два потока
-    if(argc != 2) {
-        printf("Использование: %s <колтчество_инкрементов_на_поток>\n",argv[0]);
-        return 1;
-    }
+    
+    if (argc != 2) return 1;
+    iterations = atoi(argv[1]);
+    
     pthread_create(&thread1, NULL, thread_function, NULL);
     pthread_create(&thread2, NULL, thread_function, NULL);
-    // Ждем завершения потоков
     pthread_join(thread1, NULL);
-	pthread_join(thread2, NULL);
-    // Выводим результат
-    printf("counter = %d\n", counter);
-    printf("all in spin = %d \n", all_in_spin);
+    pthread_join(thread2, NULL);
+    
+    printf("counter = %lld\n", counter);
+    printf("all in spin = %lld \n", all_in_spin);
     return 0;
 }
