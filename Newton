@@ -1,0 +1,119 @@
+#include <iostream>
+#include <cmath>
+#include <iomanip>
+
+using namespace std;
+
+typedef double (*Function)(double, double);
+
+int main() {
+    setlocale(LC_ALL, "Russian");
+
+    cout << "===============================================" << endl;
+    cout << "  РЕШЕНИЕ СИСТЕМЫ НЕЛИНЕЙНЫХ УРАВНЕНИЙ" << endl;
+    cout << "         МЕТОДОМ НЬЮТОНА" << endl;
+    cout << "===============================================" << endl;
+
+    //ФУНКЦИИ
+    auto f = [](double x, double y) { return 4*x*x*x-y*y-4; };     // f(x,y)
+    auto g = [](double x, double y) { return x*y*y*y-4*y-16; };      // g(x,y)
+
+    auto f_x = [](double x, double y) { return 12*x*x; };            // ?f/?x
+    auto f_y = [](double x, double y) { return -2*y; };            // ?f/?y
+    auto g_x = [](double x, double y) { return y*y*y; };            // ?g/?x
+    auto g_y = [](double x, double y) { return 3*x*y*y-4; };             // ?g/?y
+
+    // ВВОД НАЧАЛЬНЫХ ПРИБЛИЖЕНИЙ
+    double xn, yn;
+    double eps;
+    int maxIter = 100;
+
+    cout << "\nВведите начальное приближение x0: ";
+    cin >> xn;
+    cout << "Введите начальное приближение y0: ";
+    cin >> yn;
+    eps = 1e-6;
+
+    cout << fixed << setprecision(8);
+    cout << "\n===============================================" << endl;
+    cout << "  ПРОЦЕСС ВЫЧИСЛЕНИЙ" << endl;
+    cout << "===============================================" << endl;
+    cout << "Итер.\t xn\t\t yn\t\t Дельта_xn\t\t Дельта_yn" << endl;
+    cout << "===============================================" << endl;
+    cout << "0\t" << xn << "\t" << yn << "\t-\t\t-" << endl;
+
+    int iter = 0;
+    double delta_xn, delta_yn;
+
+    do {
+        // 1. Вычисляем значения функций в точке (xn, yn)
+        double f_val = f(xn, yn);
+        double g_val = g(xn, yn);
+
+        // Вычисляем значения производных в точке (xn, yn)
+        double f_x_val = f_x(xn, yn);
+        double f_y_val = f_y(xn, yn);
+        double g_x_val = g_x(xn, yn);
+        double g_y_val = g_y(xn, yn);
+
+        // 2. Решаем систему уравнений:
+        //    f_x_val * ?xn + f_y_val * ?yn = -f_val
+        //    g_x_val * ?xn + g_y_val * ?yn = -g_val
+
+        double a1 = f_x_val;
+        double b1 = f_y_val;
+        double c1 = -f_val;
+
+        double a2 = g_x_val;
+        double b2 = g_y_val;
+        double c2 = -g_val;
+
+        // Метод Крамера для решения системы
+        double det = a1 * b2 - a2 * b1;
+
+        if (fabs(det) < 1e-12) {
+            cout << "\nОШИБКА: Определитель системы равен 0!" << endl;
+            cout << "Метод Ньютона не может продолжаться." << endl;
+            return 1;
+        }
+
+        delta_xn = (c1 * b2 - c2 * b1) / det;
+        delta_yn = (a1 * c2 - a2 * c1) / det;
+
+        // 3. Проверяем условие остановки: max(|?xn|, |?yn|) <= eps ?
+        if (max(fabs(delta_xn), fabs(delta_yn)) <= eps) {
+            // Условие выполнено - заканчиваем программу
+            iter++;
+            cout << iter << "\t" << xn + delta_xn << "\t" << yn + delta_yn << "\t" << delta_xn << "\t" << delta_yn << endl;
+            break;
+        }
+
+        // 4. условие не выполнено - обновляем значения
+        xn = xn + delta_xn;
+        yn = yn + delta_yn;
+        iter++;
+
+        cout << iter << "\t" << xn << "\t" << yn << "\t" << delta_xn << "\t" << delta_yn << endl;
+
+        // Проверка на максимальное количество итераций
+        if (iter >= maxIter) {
+            cout << "\nДостигнуто максимальное число итераций!" << endl;
+            break;
+        }
+
+    } while (true); 
+
+    cout << "===============================================" << endl;
+    cout << "\n?РЕЗУЛЬТАТ?" << endl;
+    cout << "Решение найдено за " << iter << " итераций" << endl;
+    cout << "x = " << setprecision(10) << xn << endl;
+    cout << "y = " << setprecision(10) << yn << endl;
+
+    if (fabs(f(xn, yn)) < 1e-6 && fabs(g(xn, yn)) < 1e-6) {
+        cout << "\n? Решение верное!" << endl;
+    }
+
+    cout << "\n===============================================" << endl;
+
+    return 0;
+}
