@@ -2,53 +2,47 @@
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdlib.h>
-int iterations;
-long spin_count[2] = { 0, 0 };
-// Глобальная переменная для блокировки
+
 atomic_int _lock = 0;
+long long all_in_spin = 0;
+int iterations;
+long long counter = 0;
 
-// Функция для захвата блокировки
-void lock(atomic_int* lock,int thread_id) {
+int lock(atomic_int *lock) {
+    int spin = 0;
     while (atomic_exchange(lock, 1) == 1) {
-        // Активное ожидание (busy-waiting),
-        // пока блокировка не освободится
+        spin++;
     }
-    spin_count[thread_id]++;
+    return spin;
 }
 
-// Функция для освобождения блокировки
-void unlock(atomic_int* lock) {
-    atomic_store(lock, 0); // Освобождаем ресурс
+void unlock(atomic_int *lock) {
+    atomic_store(lock, 0);
 }
 
-// Общий ресурс
-int counter = 0;
-// Функция, которую выполняют потоки
 void* thread_function(void* arg) {
-    int id = *(int*)arg;
+    long long local_spin_sum = 0;
     for (int i = 0; i < iterations; i++) {
-        //lock(&_lock);   // Захватываем блокировку
-        counter++;      // Работаем с общим ресурсом
-        //unlock(&_lock); // Освобождаем блокировку
+        local_spin_sum += lock(&_lock);
+        counter++;
+        unlock(&_lock);
     }
+    __sync_fetch_and_add(&all_in_spin, local_spin_sum);
     return NULL;
 }
-int main() {
-    if (argc != 2) {
-        printf("Usage: %s <iterations>\n", argv[0]);
-        return 1;
-    }
-    iterations = atoi(argv[1]);
+
+int main(int argc, char* argv[]) {
     pthread_t thread1, thread2;
-    // Создаем два потока
+    
+    if (argc != 2) return 1;
+    iterations = atoi(argv[1]);
+    
     pthread_create(&thread1, NULL, thread_function, NULL);
     pthread_create(&thread2, NULL, thread_function, NULL);
-    // Ждем завершения потоков
     pthread_join(thread1, NULL);
     pthread_join(thread2, NULL);
     
-    printf("total spin count = %lld\n", spin_count[0] + spin_count[1]);
-    // Выводим результат
-    printf("counter = %d (expected: %d)\n", counter, ITERATIONS * 2);
+    printf("counter = %lld\n", counter);
+    printf("all in spin = %lld \n", all_in_spin);
     return 0;
 }
