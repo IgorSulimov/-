@@ -1,26 +1,36 @@
+#include <unistd.h>
 #include <stdio.h>
 #include <pthread.h>
+#include <linux/futex.h>
+#include <sys/syscall.h>
 #include <stdlib.h>
-#include <sched.h>
 
 volatile int _lock = 0;
-volatile long long all_in_spin = 0;
+long long all_in_spin = 0;
 int iterations;
+long long counter = 0;
+
+int futex_wait(volatile int *futexp){
+    return syscall(SYS_futex, futexp, FUTEX_WAIT, 1, NULL, NULL, 0);
+}
+
+void futex_wake(volatile int *futexp){
+    syscall(SYS_futex, futexp, FUTEX_WAKE, 1, NULL, NULL, 0);
+}
 
 int lock(volatile int *lock) {
     int spin = 0;
     while (__sync_lock_test_and_set(lock, 1)) {
         spin++;
-        sched_yield();
+        futex_wait(lock);
     }
     return spin;
 }
 
 void unlock(volatile int *lock) {
     *lock = 0;
+    futex_wake(lock);
 }
-
-long long counter = 0;
 
 void* thread_function(void* arg) {
     long long local_spin_sum = 0;
