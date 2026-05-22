@@ -1,7 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <pthread.h>
-volatile int counter = 0;
+volatile int counter;
 volatile int request[2] = { 0, 0 };
 volatile int turn = 0;
 int iterations;
@@ -29,6 +29,8 @@ int main(int argc, char* argv[]) {
 	iterations = atoi(argv[1]);
 	int tid[2];
 	tid[0] = 0;
+	    printf("Введите начальное значение counter: ");
+    scanf("%d", &counter);
 	pthread_create(&one_p, NULL, increment, &tid[0]);
 	tid[1] = 1;
 	pthread_create(&two_p, NULL, increment, &tid[1]);
