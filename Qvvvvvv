@@ -1,0 +1,215 @@
+#include <iostream>
+#include <thread>
+#include <vector>
+#include <string>
+#include <fstream>
+#include <semaphore.h>
+#include <pthread.h>
+#include <atomic>
+#include <chrono>
+using namespace std;
+template<typename T>
+class OwnQueue {
+private:
+    // Узел 
+    struct Node {
+        T data;
+        Node* next;
+        Node(const T& value) : data(value), next(nullptr) {}
+    };
+
+    Node* head_;   // Указатель на начало очереди
+    Node* tail_;   // Указатель на конец очереди
+    size_t size_;  // Количество элементов
+
+public:
+    OwnQueue() : head_(nullptr), tail_(nullptr), size_(0) {}
+
+    ~OwnQueue() {
+        while (!empty()) {
+            pop();
+        }
+    }
+
+    void push(const T& value) {
+        Node* new_node = new Node(value);
+        if (tail_) {
+            tail_->next = new_node;
+            tail_ = new_node;
+        }
+        else {
+            head_ = tail_ = new_node;
+        }
+        size_++;
+    }
+
+    T pop() {
+        if (empty()) {
+            throw runtime_error("Queue is empty");
+        }
+        Node* temp = head_;
+        T value = head_->data;
+        head_ = head_->next;
+        if (!head_) {
+            tail_ = nullptr;
+        }
+        delete temp;
+        size_--;
+        return value;
+    }
+
+    T front() const {
+        if (empty()) {
+            throw runtime_error("Queue is empty");
+        }
+        return head_->data;
+    }
+
+    bool empty() const {
+        return head_ == nullptr;
+    }
+
+    size_t size() const {
+        return size_;
+    }
+};
+
+template<typename T>
+class ThreadSafeQueue {
+private:
+    OwnQueue<T> queue_;  
+    pthread_mutex_t mutex_;  
+    sem_t sem_;             
+
+public:
+    ThreadSafeQueue() {
+        pthread_mutex_init(&mutex_, nullptr);
+        sem_init(&sem_, 0, 0); 
+    }
+
+    ~ThreadSafeQueue() {
+        pthread_mutex_destroy(&mutex_);
+        sem_destroy(&sem_);
+    }
+
+    // Добавление задания в очередь
+    void enqueue_job(const T& item) {
+        pthread_mutex_lock(&mutex_);
+        queue_.push(item);
+        pthread_mutex_unlock(&mutex_);
+        sem_post(&sem_);  // Увеличиваем семафор (появилось задание)
+    }
+
+    // Извлечение задания из очереди (блокируется, если очередь пуста)
+    T dequeue() {
+        sem_wait(&sem_);  // Ожидаем, пока семафор не станет > 0
+        pthread_mutex_lock(&mutex_);
+        T item = queue_.pop();
+        pthread_mutex_unlock(&mutex_);
+        return item;
+    }
+
+    bool empty() {
+        pthread_mutex_lock(&mutex_);
+        bool result = queue_.empty();
+        pthread_mutex_unlock(&mutex_);
+        return result;
+    }
+
+    size_t size() {
+        pthread_mutex_lock(&mutex_);
+        size_t result = queue_.size();
+        pthread_mutex_unlock(&mutex_);
+        return result;
+    }
+};
+
+ThreadSafeQueue<string> g_queue;
+ofstream g_output_file;
+pthread_mutex_t g_file_mutex;
+atomic<bool> g_running(true);
+
+void* worker_thread(void* arg) {
+    int thread_id = *(int*)arg;
+
+    cout << "[Поток " << thread_id << "] Запущен" << endl;
+
+    while (g_running) {
+        string job = g_queue.dequeue();
+
+        if (job == "__SHUTDOWN__") {
+            cout << "[Поток " << thread_id << "] Завершение" << endl;
+            break;
+        }
+
+        cout << "[Поток " << thread_id << "] Обработка: \"" << job << "\"" << endl;
+
+        pthread_mutex_lock(&g_file_mutex);
+        auto now = chrono::system_clock::now();
+        auto time_t = chrono::system_clock::to_time_t(now);
+        g_output_file << "[" << ctime(&time_t) << " Поток " << thread_id << "] " << job << endl;
+        g_output_file.flush();
+        pthread_mutex_unlock(&g_file_mutex);
+
+        this_thread::sleep_for(chrono::milliseconds(100));
+    }
+
+    cout << "[Поток " << thread_id << "] Завершён" << endl;
+    delete (int*)arg;
+    return nullptr;
+}
+
+int main() {
+    int n_threads;
+
+    cout << "Введите количество потоков: ";
+    cin >> n_threads;
+    cin.ignore();
+
+    FILE* g_output_file;
+    fopen_s(&g_output_file, "output.log", "w");
+    if (g_output_file == nullptr) {
+        cout << "Ошибка открытия файла" << endl;
+        return 1;
+    }
+
+    pthread_mutex_init(&g_file_mutex, nullptr);
+
+    pthread_t* threads = new pthread_t[n_threads];
+
+    for (int i = 0; i < n_threads; ++i) {
+        int* thread_id = new int(i + 1);
+        pthread_create(&threads[i], nullptr, worker_thread, thread_id);
+    }
+
+    cout << "Введите строки (exit для выхода):" << endl;
+
+    string input;
+    while (true) {
+        cout << "> ";
+        getline(cin, input);
+
+        if (input == "exit") break;
+        if (input.empty()) continue;
+
+        g_queue.enqueue_job(input);
+    }
+
+    // Завершение
+    cout << "Завершение работы..." << endl;
+
+    for (int i = 0; i < n_threads; ++i) {
+        g_queue.enqueue_job("SHUTDOWN");
+    }
+
+    for (int i = 0; i < n_threads; ++i) {
+        pthread_join(threads[i], nullptr);
+    }
+
+    g_output_file.close();
+    pthread_mutex_destroy(&g_file_mutex);
+    delete[] threads;
+
+    cout << "Программа завершена" << endl;
+    return 0;
+}
