@@ -102,7 +102,6 @@ void* worker_thread(void* arg) {
     free(arg);
 
     printf("[Поток %d] Запущен\n", id);
-
     while (g_running) {
         char* task = dequeue_job(&g_queue);
 
@@ -112,7 +111,6 @@ void* worker_thread(void* arg) {
         }
 
         printf("[Поток %d] Обрабатывает: %s\n", id, task);
-
         pthread_mutex_lock(&g_file_mutex);
         time_t now = time(NULL);
         char* time_str = ctime(&now);
@@ -154,10 +152,8 @@ int main() {
         pthread_create(&threads[i], NULL, worker_thread, id);
     }
 
-    printf("\nВведите строки (exit для выхода):\n");
 
     while (1) {
-        printf("> ");
         fgets(input, sizeof(input), stdin);
         input[strcspn(input, "\n")] = '\0';
 
