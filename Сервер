@@ -1,0 +1,208 @@
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <stdio.h>
+#include <vector>
+#include <thread>
+#include <queue>
+#include <mutex>
+#include <condition_variable>
+#include <algorithm>
+
+#pragma comment (lib, "Ws2_32.lib")
+
+#define DEFAULT_PORT "27015"
+#define DEFAULT_BUFLEN 512
+#define NUM_WORKERS 4
+
+// =========================================================================
+// ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
+// =========================================================================
+std::queue<SOCKET> taskQueue;              // Сокеты, готовые к чтению
+std::mutex queueMutex;
+std::condition_variable queueCV;
+bool serverRunning = true;
+
+// Набор активных клиентов (сокетов). Защищён мьютексом, потому что:
+// - главный поток добавляет/удаляет сокеты
+// - рабочие потоки сообщают "этот сокет отвалился, удали его"
+std::vector<SOCKET> clients;
+std::mutex clientsMutex;
+
+// =========================================================================
+// РАБОЧИЙ ПОТОК (THREAD POOL)
+// =========================================================================
+void WorkerThread() {
+    while (serverRunning) {
+        SOCKET clientSocket = INVALID_SOCKET;
+
+        {
+            std::unique_lock<std::mutex> lock(queueMutex);
+            queueCV.wait(lock, [] { return !taskQueue.empty() || !serverRunning; });
+            if (!serverRunning && taskQueue.empty()) break;
+
+            clientSocket = taskQueue.front();
+            taskQueue.pop();
+        }
+
+        if (clientSocket == INVALID_SOCKET) continue;
+
+        // --- Читаем данные (сокет неблокирующий) ---
+        char recvbuf[DEFAULT_BUFLEN];
+        int iResult = recv(clientSocket, recvbuf, DEFAULT_BUFLEN - 1, 0);
+
+        if (iResult > 0) {
+            recvbuf[iResult] = '\0';
+            printf("[Worker %lu] Socket %llu -> Received %d bytes: %s\n",
+                   GetCurrentThreadId(), (unsigned long long)clientSocket, iResult, recvbuf);
+
+            // Отправляем эхо-ответ. Сокет НЕ закрываем!
+            send(clientSocket, recvbuf, iResult, 0);
+
+            // ВАЖНО: Сообщаем главному потоку, что сокет снова готов к чтению
+            // (ведь неблокирующий recv мог вычитать не всё сразу, а новый select 
+            // должен снова взять этот сокет в обработку)
+            {
+                std::lock_guard<std::mutex> lock(queueMutex);
+                taskQueue.push(clientSocket);
+            }
+            queueCV.notify_one();
+        }
+        else if (iResult == 0) {
+            // Клиент корректно закрыл соединение
+            printf("[Worker] Socket %llu disconnected.\n", (unsigned long long)clientSocket);
+            closesocket(clientSocket);
+
+            // Удаляем его из массива активных клиентов
+            std::lock_guard<std::mutex> lock(clientsMutex);
+            clients.erase(std::remove(clients.begin(), clients.end(), clientSocket), clients.end());
+        }
+        else {
+            // Ошибка (в том числе WSAEWOULDBLOCK — если вдруг данных уже нет)
+            int err = WSAGetLastError();
+            if (err == WSAEWOULDBLOCK) {
+                // Это НЕ ошибка! Данных пока нет, но сокет жив.
+                // Просто возвращаем его в очередь для повторной проверки.
+                std::lock_guard<std::mutex> lock(queueMutex);
+                taskQueue.push(clientSocket);
+                queueCV.notify_one();
+            } else {
+                printf("[Worker] Socket %llu recv failed: %d\n",
+                       (unsigned long long)clientSocket, err);
+                closesocket(clientSocket);
+
+                std::lock_guard<std::mutex> lock(clientsMutex);
+                clients.erase(std::remove(clients.begin(), clients.end(), clientSocket), clients.end());
+            }
+        }
+    }
+}
+
+// =========================================================================
+// ГЛАВНАЯ ФУНКЦИЯ (EVENT LOOP)
+// =========================================================================
+int main() {
+    WSADATA wsaData;
+    SOCKET ListenSocket = INVALID_SOCKET;
+    struct addrinfo* result = NULL;
+    struct addrinfo hints;
+    int iResult;
+
+    iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
+    if (iResult != 0) { printf("WSAStartup failed\n"); return 1; }
+
+    ZeroMemory(&hints, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_protocol = IPPROTO_TCP;
+    hints.ai_flags = AI_PASSIVE;
+
+    getaddrinfo(NULL, DEFAULT_PORT, &hints, &result);
+
+    ListenSocket = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
+    bind(ListenSocket, result->ai_addr, (int)result->ai_addrlen);
+    freeaddrinfo(result);
+    listen(ListenSocket, SOMAXCONN);
+
+    // Неблокирующий слушающий сокет
+    u_long mode = 1;
+    ioctlsocket(ListenSocket, FIONBIO, &mode);
+
+    // Запуск 4 рабочих потоков
+    std::vector<std::thread> workers;
+    for (int i = 0; i < NUM_WORKERS; ++i)
+        workers.emplace_back(WorkerThread);
+
+    printf("Server started on %s. Main thread watching clients...\n\n", DEFAULT_PORT);
+
+    // =====================================================================
+    // ГЛАВНЫЙ ЦИКЛ (Event Loop)
+    // =====================================================================
+    while (serverRunning) {
+        fd_set readfds;
+        FD_ZERO(&readfds);
+        FD_SET(ListenSocket, &readfds);  // Следим за новыми подключениями
+
+        // Следим за всеми активными клиентами
+        {
+            std::lock_guard<std::mutex> lock(clientsMutex);
+            for (SOCKET s : clients) {
+                if (s != INVALID_SOCKET) FD_SET(s, &readfds);
+            }
+        }
+
+        int activity = select(0, &readfds, NULL, NULL, NULL);
+        if (activity == SOCKET_ERROR) {
+            printf("select failed: %d\n", WSAGetLastError());
+            break;
+        }
+
+        // Новый клиент?
+        if (FD_ISSET(ListenSocket, &readfds)) {
+            SOCKET newClient = accept(ListenSocket, NULL, NULL);
+            if (newClient != INVALID_SOCKET) {
+                // Делаем сокет клиента неблокирующим
+                ioctlsocket(newClient, FIONBIO, &mode);
+
+                {
+                    std::lock_guard<std::mutex> lock(clientsMutex);
+                    clients.push_back(newClient);
+                }
+                printf("[Main] New client %llu connected. Total: %zu\n",
+                       (unsigned long long)newClient, clients.size());
+            }
+        }
+
+        // Проверяем, кто из клиентов прислал данные
+        std::vector<SOCKET> readyClients;
+        {
+            std::lock_guard<std::mutex> lock(clientsMutex);
+            for (SOCKET s : clients) {
+                if (s != INVALID_SOCKET && FD_ISSET(s, &readfds))
+                    readyClients.push_back(s);
+            }
+        }
+
+        // Готовые сокеты отправляем в очередь к рабочим потокам
+        if (!readyClients.empty()) {
+            std::lock_guard<std::mutex> lock(queueMutex);
+            for (SOCKET s : readyClients) {
+                taskQueue.push(s);
+                queueCV.notify_one();
+            }
+        }
+    }
+
+    // Graceful shutdown
+    serverRunning = false;
+    queueCV.notify_all();
+    for (auto& w : workers) if (w.joinable()) w.join();
+
+    std::lock_guard<std::mutex> lock(clientsMutex);
+    for (SOCKET s : clients) if (s != INVALID_SOCKET) closesocket(s);
+
+    closesocket(ListenSocket);
+    WSACleanup();
+    return 0;
+}
