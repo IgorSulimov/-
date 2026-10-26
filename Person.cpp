@@ -18,7 +18,7 @@ int __cdecl main(int argc, char** argv)
 {
     WSADATA wsaData;
     SOCKET ConnectSocket = INVALID_SOCKET;
-    struct addrinfo result = NULL,
+    struct addrinfo* result = NULL,
         * ptr = NULL,
         hints;
     const char* sendbuf = "GET / HTTP/1.1\r\nAccept-Encoding: gzip, deflate\r\nHost: pak.tversu.ru\r\n\r\n";
