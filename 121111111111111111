@@ -1,0 +1,46 @@
+# 1. Создаем пространства имен
+sudo ip netns add h1
+sudo ip netns add r1
+sudo ip netns add h2
+
+# 2. Создаем провода (veth)
+sudo ip link add h1-eth0 type veth peer name r1-eth0
+sudo ip link add h2-eth0 type veth peer name r1-eth1
+
+# 3. Раскидываем провода
+sudo ip link set h1-eth0 netns h1
+sudo ip link set r1-eth0 netns r1
+sudo ip link set h2-eth0 netns h2
+sudo ip link set r1-eth1 netns r1
+
+# 4. Переименовываем интерфейсы внутри хостов
+sudo ip netns exec h1 ip link set h1-eth0 name eth0
+sudo ip netns exec h2 ip link set h2-eth0 name eth0
+
+# 5. Включаем интерфейсы (UP)
+sudo ip netns exec h1 ip link set eth0 up
+sudo ip netns exec h1 ip link set lo up
+sudo ip netns exec h2 ip link set eth0 up
+sudo ip netns exec h2 ip link set lo up
+sudo ip netns exec r1 ip link set r1-eth0 up
+sudo ip netns exec r1 ip link set r1-eth1 up
+sudo ip netns exec r1 ip link set lo up
+
+# 6. Назначаем MAC-адреса (из твоей таблицы)
+sudo ip netns exec h1 ip link set eth0 address 02:48:60:85:0c:1d
+sudo ip netns exec r1 ip link set r1-eth0 address 02:6d:45:36:63:04
+sudo ip netns exec r1 ip link set r1-eth1 address 02:56:3c:2e:c9:a0
+sudo ip netns exec h2 ip link set eth0 address 02:d1:31:0b:99:72
+
+# 7. Назначаем IP-адреса
+sudo ip netns exec h1 ip addr add 10.47.13.1/24 dev eth0
+sudo ip netns exec r1 ip addr add 10.47.13.254/24 dev r1-eth0
+sudo ip netns exec r1 ip addr add 10.47.113.126/25 dev r1-eth1
+sudo ip netns exec h2 ip addr add 10.47.113.1/25 dev eth0
+
+# 8. Добавляем шлюзы на хосты
+sudo ip netns exec h1 ip route add default via 10.47.13.254
+sudo ip netns exec h2 ip route add default via 10.47.113.126
+
+# 9. Включаем маршрутизацию на роутере
+sudo ip netns exec r1 sysctl -w net.ipv4.ip_forward=1
