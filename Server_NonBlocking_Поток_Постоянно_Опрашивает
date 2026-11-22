@@ -101,14 +101,12 @@ int __cdecl main(void)
     if (iResult == SOCKET_ERROR) {
         printf("bind failed: %d\n", WSAGetLastError());
         freeaddrinfo(result);
-        closesocket(ListenSocket);
     }
     freeaddrinfo(result);
 
     iResult = listen(ListenSocket, SOMAXCONN);
     if (iResult == SOCKET_ERROR) {
         printf("listen failed: %d\n", WSAGetLastError());
-        closesocket(ListenSocket);
     }
 
     // Слушающий сокет неблокирующий
