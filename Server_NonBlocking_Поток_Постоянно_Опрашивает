@@ -1,0 +1,178 @@
+#undef UNICODE
+#define WIN32_LEAN_AND_MEAN
+
+#include <windows.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <vector>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <queue>
+#include <string>
+
+#pragma comment (lib, "Ws2_32.lib")
+
+#define DEFAULT_BUFLEN 512
+#define DEFAULT_PORT   "27015"
+#define WORKER_COUNT   4   
+
+struct Task {
+    SOCKET      client;
+    std::string data;
+};
+
+std::queue<Task>          g_taskQueue;
+std::mutex                g_queueMutex;
+std::condition_variable   g_queueCV;
+bool                      g_stop = false;
+
+
+void Worker()
+{
+    while (true) {
+        Task task;
+        {
+            std::unique_lock<std::mutex> lock(g_queueMutex);
+            // Ждём, пока появится задача или придёт сигнал остановки
+            g_queueCV.wait(lock, [] { return g_stop || !g_taskQueue.empty(); });
+            if (g_stop && g_taskQueue.empty()) return;
+            task = std::move(g_taskQueue.front());
+            g_taskQueue.pop();
+        }
+
+        //Worker ОБРАБАТЫВАЕТ клиента
+        printf("[worker %lu] handling %d bytes from client %llu\n",
+            GetCurrentThreadId(), (int)task.data.size(),
+            (unsigned long long)task.client);
+
+        //Эхо-ответ
+        int sent = send(task.client, task.data.data(),
+            (int)task.data.size(), 0);
+        if (sent == SOCKET_ERROR) {
+            int err = WSAGetLastError();
+            if (err != WSAEWOULDBLOCK) {
+                printf("[worker] send failed: %d\n", err);
+            }
+        }
+    }
+}
+
+int __cdecl main(void)
+{
+    WSADATA wsaData;
+    int iResult;
+
+    SOCKET ListenSocket = INVALID_SOCKET;
+    SOCKET ClientSocket = INVALID_SOCKET;
+
+    struct addrinfo* result = NULL;
+    struct addrinfo hints;
+
+    std::vector<SOCKET> clients;
+
+    // --- Winsock init ---
+    iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
+    if (iResult != 0) {
+        printf("WSAStartup failed: %d\n", iResult);
+        return 1;
+    }
+
+    ZeroMemory(&hints, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_protocol = IPPROTO_TCP;
+    hints.ai_flags = AI_PASSIVE;
+
+    iResult = getaddrinfo(NULL, DEFAULT_PORT, &hints, &result);
+    if (iResult != 0) {
+        printf("getaddrinfo failed: %d\n", iResult);
+    }
+
+    ListenSocket = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
+    if (ListenSocket == INVALID_SOCKET) {
+        printf("socket failed: %ld\n", WSAGetLastError());
+        freeaddrinfo(result);
+    }
+
+    iResult = bind(ListenSocket, result->ai_addr, (int)result->ai_addrlen);
+    if (iResult == SOCKET_ERROR) {
+        printf("bind failed: %d\n", WSAGetLastError());
+        freeaddrinfo(result);
+        closesocket(ListenSocket);
+    }
+    freeaddrinfo(result);
+
+    iResult = listen(ListenSocket, SOMAXCONN);
+    if (iResult == SOCKET_ERROR) {
+        printf("listen failed: %d\n", WSAGetLastError());
+        closesocket(ListenSocket);
+    }
+
+    // Слушающий сокет неблокирующий
+    u_long mode = 1;
+    ioctlsocket(ListenSocket, FIONBIO, &mode);
+
+    //Запускаем пул рабочих потоков
+    std::vector<std::thread> workers;
+    for (int i = 0; i < WORKER_COUNT; ++i) {
+        workers.emplace_back(Worker);
+    }
+
+    // Бесконечный цикл опроса
+    while (true) {
+        // 1. Принять новых клиентов
+        ClientSocket = accept(ListenSocket, NULL, NULL);
+        if (ClientSocket != INVALID_SOCKET) {
+            u_long cm = 1;
+            ioctlsocket(ClientSocket, FIONBIO, &cm);
+            clients.push_back(ClientSocket);
+            printf("new client %llu, total: %zu\n",
+                (unsigned long long)ClientSocket, clients.size());
+        }
+        else {
+            int err = WSAGetLastError();
+            if (err != WSAEWOULDBLOCK)
+                printf("accept failed: %d\n", err);
+        }
+
+        // 2. Опрос всех клиентов
+        for (auto it = clients.begin(); it != clients.end(); ) {
+            SOCKET s = *it;
+            char recvbuf[DEFAULT_BUFLEN];
+            int r = recv(s, recvbuf, DEFAULT_BUFLEN, 0);
+
+            if (r > 0) {
+                // Если есть данные, передаём задачу worker
+                {
+                    std::lock_guard<std::mutex> lock(g_queueMutex);
+                    g_taskQueue.push(Task{ s, std::string(recvbuf, r) });
+                }
+                g_queueCV.notify_one();   // разбудить один свободный worker
+
+                ++it;
+            }
+            else if (r == 0) {
+                printf("client %llu disconnected\n",
+                    (unsigned long long)s);
+                closesocket(s);
+                it = clients.erase(it);
+            }
+            else {
+                int err = WSAGetLastError();
+                if (err == WSAEWOULDBLOCK) {
+                    // Данных нет — просто идём к следующему клиенту.
+                    ++it;
+                }
+                else {
+                    printf("recv failed on %llu: %d\n",
+                        (unsigned long long)s, err);
+                    closesocket(s);
+                    it = clients.erase(it);
+                }
+            }
+        }
+    }
+}
